@@ -1,0 +1,19 @@
+{
+  "name": "quartermaster",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Treasury layer for the agent economy. Built on Zerion CLI.",
+  "packageManager": "pnpm@9.15.5",
+  "scripts": {
+    "dev:landing": "pnpm --filter landing dev",
+    "dev:dashboard": "pnpm --filter dashboard dev",
+    "build:landing": "pnpm --filter landing build",
+    "build:dashboard": "pnpm --filter dashboard build",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

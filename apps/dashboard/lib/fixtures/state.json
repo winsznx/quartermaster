@@ -1,0 +1,20 @@
+{
+  "_comment": "Skeleton fixture so the dashboard can render something on day 1. Full fixtures land in Phase 2 once shared-schemas are real. Shape WILL change — this is intentionally minimal.",
+  "fleet": {
+    "totalWallets": 5,
+    "totalFloatUsdc": 42.30,
+    "minRunwayHours": 14,
+    "aggregateBurnUsdcPerHour": 1.23
+  },
+  "treasury": {
+    "totalValueUsd": 8420.17,
+    "sourceCount": 3,
+    "weightedApy": 0.048
+  },
+  "actions24h": {
+    "topupsCount": 12,
+    "blockedCount": 0,
+    "errorsCount": 0,
+    "totalUsdMoved": 124.00
+  }
+}

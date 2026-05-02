@@ -3,7 +3,7 @@
 > Treasury layer for the agent economy. Built on Zerion CLI.
 
 x402 makes AI agents pay USDC per API call. They run dry. Quartermaster watches a fleet of agent wallets, projects when each will starve, and tops them up from the principal's yield positions — within five composable on-chain policies.
-
+![alt text](image.png)
 Submitted to the Colosseum Frontier Hackathon, Zerion CLI track.
 
 ## Status
@@ -12,10 +12,10 @@ Pre-Day-0 scaffold. Build phases 0→6 per `MASTER_PRD.md` §31.
 
 ## Apps
 
-| App | Path | Deploy target | Port (dev) |
-|---|---|---|---|
-| Landing | `apps/landing/` | Vercel (public) | 3000 |
-| Dashboard | `apps/dashboard/` | **LOCAL ONLY** — polls `http://127.0.0.1:7402` | 3001 |
+| App       | Path              | Deploy target                                  | Port (dev) |
+| --------- | ----------------- | ---------------------------------------------- | ---------- |
+| Landing   | `apps/landing/`   | Vercel (public)                                | 3000       |
+| Dashboard | `apps/dashboard/` | **LOCAL ONLY** — polls `http://127.0.0.1:7402` | 3001       |
 
 The dashboard cannot deploy to Vercel — it polls localhost. Do not point Vercel at it.
 
@@ -53,14 +53,14 @@ quartermaster/
 
 ## Documents
 
-| File | Audience | When to read |
-|---|---|---|
-| `MASTER_PRD.md` | everyone | source of truth for product spec |
-| `FRONTEND_BRIEF.md` | frontend dev | start here; reach for PRD when needed |
-| `HANDOFF.md` | repo owner | the init steps that got us here |
-| `AGENT_PROGRESS.md` | next agent / next session | what was done, what's blocked, what's next |
-| `gap.md` | frontend dev → repo owner | every gap or ambiguity hit during build |
-| `docs-verified/DEVIATIONS.md` | everyone | every drift from PRD/upstream, with reason |
+| File                          | Audience                  | When to read                               |
+| ----------------------------- | ------------------------- | ------------------------------------------ |
+| `MASTER_PRD.md`               | everyone                  | source of truth for product spec           |
+| `FRONTEND_BRIEF.md`           | frontend dev              | start here; reach for PRD when needed      |
+| `HANDOFF.md`                  | repo owner                | the init steps that got us here            |
+| `AGENT_PROGRESS.md`           | next agent / next session | what was done, what's blocked, what's next |
+| `gap.md`                      | frontend dev → repo owner | every gap or ambiguity hit during build    |
+| `docs-verified/DEVIATIONS.md` | everyone                  | every drift from PRD/upstream, with reason |
 
 ## Toolchain
 

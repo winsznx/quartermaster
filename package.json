@@ -5,6 +5,7 @@
   "description": "Treasury layer for the agent economy. Built on Zerion CLI.",
   "packageManager": "pnpm@9.15.5",
   "scripts": {
+    "dev": "pnpm -r --parallel dev",
     "dev:landing": "pnpm --filter landing dev",
     "dev:dashboard": "pnpm --filter dashboard dev",
     "build:landing": "pnpm --filter landing build",

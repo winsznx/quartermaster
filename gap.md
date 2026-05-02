@@ -33,3 +33,31 @@ The repo owner reviews this file when planning the next round of PRD updates or 
 ---
 
 <!-- New entries below. Most recent first. -->
+
+## 2026-05-02 — Port 3000 occupied
+
+**Where:** apps/landing
+**PRD reference (if any):** N/A
+**Brief reference (if any):** Phase A Task 2
+
+**The gap:** Port 3000 is occupied by process 2076 (likely another project). PRD/Brief implies landing should run on 3000.
+
+**What you did anyway:** Changed landing `dev` script to use port 3002.
+
+**What needs to happen:** User to confirm if port 3000 can be freed or if 3002 is acceptable for landing.
+
+**Blocking?** No
+
+## 2026-05-02 — Contrast sanity check
+
+**Where:** apps/dashboard/app/globals.css
+**PRD reference (if any):** N/A
+**Brief reference (if any):** Contrast notes
+
+**The gap:** Oxblood `#8B2A26` on bg `#0B0D0E` measures ~3.1:1, failing AA for body text.
+
+**What you did anyway:** Ensured it's only used as `bg-danger` with white text (e.g., in badges/pills) which hits ~5.9:1 and passes AA. No component uses it as text foreground.
+
+**What needs to happen:** Nothing, as long as it's restricted to filled backgrounds.
+
+**Blocking?** No

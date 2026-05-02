@@ -83,3 +83,36 @@ Keep entries terse. The diff is in git; this file captures *intent and state*, n
 - **No CONTRIBUTING.md, no code of conduct, no issue templates:** hackathon repo, two contributors, fourteen days. Skip the open-source-project ceremony.
 - **CI workflow runs typecheck + build only:** no test job because there are no tests yet (Phase 0 — tests land in Phase 2+ per PRD §25). Add a test job when the first test file is committed.
 - **`PRD_v2` → `MASTER_PRD.md`:** drop the version suffix per "no drift, one source of truth" rule. Old version lives in git history if needed.
+
+---
+
+## 2026-05-02 — Antigravity — Phase A: Environment setup + token wiring
+
+**Phase:** A
+**Started from:** commit on `main` following Phase 0 completion
+**Ended at:** <pending commit SHA>
+
+### Done
+- Read `AGENT_PROGRESS.md`, `MASTER_PRD.md`, `FRONTEND_BRIEF.md`, `docs-verified/DEVIATIONS.md`, `gap.md`
+- Verified `pnpm install` from repo root passes
+- Updated Specie CSS variables in `apps/landing/app/globals.css` and `apps/dashboard/app/globals.css` with dark and light modes
+- Wired Tailwind v4 `@theme` directives in both globals.css files mapping to CSS variables
+- Verified font setup: Fraunces, Inter, JetBrains Mono in landing; Inter, JetBrains Mono in dashboard
+- `ThemeToggle` component implemented and mapped to `ThemeProvider` in dashboard `layout.tsx`
+- Adjusted `badge.tsx` and `skeleton.tsx` to match Specie tokens directly where needed
+- Overridden shadcn tokens in dashboard `globals.css`
+- Validated contrast checks for Specie color combos and noted oxblood text anomaly in `gap.md`
+- Replaced the default Next.js template in `apps/landing/app/page.tsx` to remove hardcoded hex values, starting the Phase B Hero shell
+
+### Blocked / open
+- Landing port 3000 was reported occupied in `gap.md`, landing dev server configured to use port 3002
+
+### Next
+- Proceed to Phase B: Landing page (Days 2-4)
+- Implement Asciinema embed via `next/script`
+- Complete sections 2-7 of the landing page
+
+### Decisions made (only the non-obvious ones)
+- `badge.tsx` was overridden manually to handle the `destructive` oxblood color requirement properly and `rounded-4xl` was replaced with `rounded-[2px]` per PRD specs.
+- Mapped shadcn utility classes (e.g., `bg-background`) in `globals.css` to automatically use `var(--color-bg)` instead of updating the string inside every `.tsx` component, allowing clean upstream shadcn updates.
+

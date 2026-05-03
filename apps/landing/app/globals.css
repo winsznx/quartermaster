@@ -1,26 +1,170 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+:root[data-theme="dark"], :root {
+  /* Surfaces */
+  --color-bg:              #0B0D0E;
+  --color-surface-1:       #141719;
+  --color-surface-2:       #1C1F22;
+  --color-surface-3:       #272B2F;
+  --color-border-subtle:   #2A2E32;
+  --color-border-strong:   #3B4046;
+
+  /* Text */
+  --color-text-primary:    #ECE8DE;  /* bone */
+  --color-text-secondary:  #A8A39A;
+  --color-text-muted:      #6B6862;
+  --color-text-inverse:    #0B0D0E;
+
+  /* Brand / actions */
+  --color-accent:          #C9A961;  /* antique gold */
+  --color-accent-hover:    #D4B572;
+  --color-accent-muted:    #7C683B;
+
+  /* Semantic */
+  --color-success:         #6B7F5E;  /* sage */
+  --color-warning:         #D4703F;  /* burnt sienna */
+  --color-danger:          #8B2A26;  /* oxblood */
+  --color-info:            #3A4D52;  /* slate teal */
+
+  /* Charts */
+  --chart-1: #C9A961;
+  --chart-2: #6B7F5E;
+  --chart-3: #3A4D52;
+  --chart-4: #D4703F;
+  --chart-5: #8B2A26;
+  --chart-6: #A8A39A;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+:root[data-theme="light"] {
+  --color-bg:              #F4F1E8;  /* parchment */
+  --color-surface-1:       #FBFAF4;
+  --color-surface-2:       #EDE9DC;
+  --color-surface-3:       #E4DFCE;
+  --color-border-subtle:   #DAD4BF;
+  --color-border-strong:   #B8B09A;
+
+  --color-text-primary:    #1A1C1E;
+  --color-text-secondary:  #4A4A47;
+  --color-text-muted:      #7A7770;
+  --color-text-inverse:    #FBFAF4;
+
+  --color-accent:          #8E6A1F;  /* burnished gold */
+  --color-accent-hover:    #A07A28;
+  --color-accent-muted:    #C4AE80;
+
+  --color-success:         #4D5E42;
+  --color-warning:         #B85A25;
+  --color-danger:          #6B1F1C;
+  --color-info:            #2A393E;
+
+  --chart-1: #8E6A1F;
+  --chart-2: #4D5E42;
+  --chart-3: #2A393E;
+  --chart-4: #B85A25;
+  --chart-5: #6B1F1C;
+  --chart-6: #7A7770;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@theme {
+  --color-bg: var(--color-bg);
+  --color-surface-1: var(--color-surface-1);
+  --color-surface-2: var(--color-surface-2);
+  --color-surface-3: var(--color-surface-3);
+  --color-border-subtle: var(--color-border-subtle);
+  --color-border-strong: var(--color-border-strong);
+  
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-inverse: var(--color-text-inverse);
+  
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-muted: var(--color-accent-muted);
+  
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-danger: var(--color-danger);
+  --color-info: var(--color-info);
+  
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-display: "Fraunces", serif;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  .section-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-accent);
+    font-size: 8px;
+    opacity: 0.6;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .section-divider::before,
+  .section-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background-color: var(--color-border-subtle);
+    opacity: 0.3;
+  }
+
+  .section-divider::before {
+    margin-right: 24px;
+  }
+
+  .section-divider::after {
+    margin-left: 24px;
+  }
+
+  .policy-card {
+    transition: border-color 200ms ease-out;
+  }
+
+  .policy-card:hover {
+    border-color: var(--color-accent);
+  }
+
+  .policy-card .policy-icon-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    transition: background-color 200ms ease-out;
+  }
+
+  .policy-card:hover .policy-icon-wrapper {
+    background-color: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  }
+
+  .hero-heading {
+    font-feature-settings: "ss01" on;
+  }
+
+  @media (min-width: 768px) {
+    .hero-heading {
+      letter-spacing: -0.02em;
+    }
+  }
+
+  .mono-lead {
+    font-size: 15px;
+    letter-spacing: 0.04em;
+  }
 }
+

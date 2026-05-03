@@ -1,27 +1,23 @@
 'use client'
 
+import { Bot } from 'lucide-react'
+import { EmptyState } from '@/components/empty-state'
+
 export default function FleetPage() {
   return (
-    <div>
-      <h1 style={{ fontSize: 28, fontWeight: 500, marginBottom: 8 }}>
-        Fleet
-      </h1>
-      <p style={{ color: 'var(--color-text-secondary)', marginBottom: 32 }}>
-        Monitor your subordinate agent wallets and their runway.
-      </p>
-      <div style={{
-        border: '1px dashed var(--color-border-subtle)',
-        borderRadius: 6,
-        padding: 48,
-        textAlign: 'center',
-        color: 'var(--color-text-muted)',
-        fontFamily: 'var(--font-jetbrains-mono)'
-      }}>
-        No wallets registered. Add one with:<br/>
-        <span style={{ color: 'var(--color-accent)', marginTop: 12, display: 'block' }}>
-          zerion fleet add &lt;wallet-id&gt; &lt;address&gt;
-        </span>
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-[28px] font-medium text-text-primary tracking-tight">Fleet</h1>
+        <p className="text-sm text-text-secondary mt-1">
+          Subordinate agent wallets and their runway.
+        </p>
       </div>
+
+      <EmptyState 
+        icon={Bot}
+        message="No wallets registered."
+        cli="zerion fleet add <wallet-id> <address>"
+      />
     </div>
   )
 }

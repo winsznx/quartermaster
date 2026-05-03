@@ -156,5 +156,12 @@
     "totalFleetBalance": 49.1,
     "totalTreasuryBalance": 6650.0,
     "actions24h": 4
+  },
+  "policyStats": {
+    "allowlist": { "pass": 142, "fail": 0 },
+    "max-per-action-cap": { "pass": 142, "fail": 2 },
+    "cooldown-window": { "pass": 140, "fail": 5 },
+    "burn-rate-oracle": { "pass": 135, "fail": 1 },
+    "yield-curve-preservation": { "pass": 134, "fail": 0 }
   }
 }

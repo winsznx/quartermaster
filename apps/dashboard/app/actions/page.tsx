@@ -1,23 +1,22 @@
 'use client'
 
+import { ArrowLeftRight } from 'lucide-react'
+import { EmptyState } from '@/components/empty-state'
+
 export default function ActionsPage() {
   return (
-    <div>
-      <h1 style={{ fontSize: 28, fontWeight: 500, marginBottom: 8 }}>
-        Actions
-      </h1>
-      <p style={{ color: 'var(--color-text-secondary)', marginBottom: 32 }}>
-        Full top-up ledger from the daemon.
-      </p>
-      <div style={{
-        border: '1px dashed var(--color-border-subtle)',
-        borderRadius: 6,
-        padding: 48,
-        textAlign: 'center',
-        color: 'var(--color-text-muted)'
-      }}>
-        No recent actions to display.
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-[28px] font-medium text-text-primary tracking-tight">Actions</h1>
+        <p className="text-sm text-text-secondary mt-1">
+          Top-up ledger. Every action logged.
+        </p>
       </div>
+
+      <EmptyState 
+        icon={ArrowLeftRight}
+        message="No actions recorded yet."
+      />
     </div>
   )
 }

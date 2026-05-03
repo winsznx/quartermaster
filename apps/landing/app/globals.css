@@ -92,81 +92,79 @@
   --font-display: "Fraunces", serif;
 }
 
-body {
-  background-color: var(--color-bg);
-  color: var(--color-text-primary);
-  font-family: var(--font-sans);
-  background-image: repeating-linear-gradient(
-    45deg,
-    transparent,
-    transparent 19px,
-    rgba(201, 169, 97, 0.04) 19px,
-    rgba(201, 169, 97, 0.04) 20px
-  );
-}
-
-.section-divider {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-accent);
-  font-size: 10px; /* diamond size */
-  opacity: 0.8;
-}
-
-.section-divider::before,
-.section-divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background-color: var(--color-border-subtle);
-}
-
-.section-divider::before {
-  margin-right: 12px;
-}
-
-.section-divider::after {
-  margin-left: 12px;
-}
-
-
-.policy-card {
-  transition: border-color 200ms ease-out;
-}
-
-.policy-card:hover {
-  border-color: var(--color-accent);
-}
-
-.policy-card .policy-icon-wrapper {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  transition: background-color 200ms ease-out;
-}
-
-.policy-card:hover .policy-icon-wrapper {
-  background-color: color-mix(in srgb, var(--color-accent) 10%, transparent);
-}
-
-/* Typography Overrides */
-.hero-heading {
-  font-feature-settings: "ss01" on;
-}
-
-@media (min-width: 768px) {
-  .hero-heading {
-    letter-spacing: -0.02em;
+@layer base {
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
   }
 }
 
-.mono-lead {
-  font-size: 15px;
-  letter-spacing: 0.04em;
+@layer components {
+  .section-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-accent);
+    font-size: 8px;
+    opacity: 0.6;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .section-divider::before,
+  .section-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background-color: var(--color-border-subtle);
+    opacity: 0.3;
+  }
+
+  .section-divider::before {
+    margin-right: 24px;
+  }
+
+  .section-divider::after {
+    margin-left: 24px;
+  }
+
+  .policy-card {
+    transition: border-color 200ms ease-out;
+  }
+
+  .policy-card:hover {
+    border-color: var(--color-accent);
+  }
+
+  .policy-card .policy-icon-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    transition: background-color 200ms ease-out;
+  }
+
+  .policy-card:hover .policy-icon-wrapper {
+    background-color: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  }
+
+  .hero-heading {
+    font-feature-settings: "ss01" on;
+  }
+
+  @media (min-width: 768px) {
+    .hero-heading {
+      letter-spacing: -0.02em;
+    }
+  }
+
+  .mono-lead {
+    font-size: 15px;
+    letter-spacing: 0.04em;
+  }
 }
 

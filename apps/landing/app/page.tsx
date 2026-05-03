@@ -45,7 +45,7 @@ function Section({ children, id, className = "" }: { children: React.ReactNode, 
   const isInView = useInView(ref, { once: true, margin: "-80px" });
   
   return (
-    <section id={id} ref={ref} className={`py-[120px] px-4 max-w-[1100px] mx-auto ${className}`}>
+    <section id={id} ref={ref} className={`py-[64px] px-[48px] max-w-[1100px] mx-auto ${className}`}>
       <motion.div
         variants={sectionVariants}
         initial="hidden"
@@ -97,9 +97,9 @@ export default function LandingPage() {
             <svg viewBox="0 0 100 100" className="w-full h-full text-accent opacity-90">
               {[...Array(24)].map((_, i) => {
                 const angle = (i * 360) / 24;
-                const length = 35 + Math.random() * 15;
-                const x2 = 50 + length * Math.cos((angle * Math.PI) / 180);
-                const y2 = 50 + length * Math.sin((angle * Math.PI) / 180);
+                const length = 42; 
+                const x2 = Number((50 + length * Math.cos((angle * Math.PI) / 180)).toFixed(3));
+                const y2 = Number((50 + length * Math.sin((angle * Math.PI) / 180)).toFixed(3));
                 return (
                   <line 
                     key={i} 
@@ -120,7 +120,7 @@ export default function LandingPage() {
 
       <main className="flex-1 relative z-10">
         {/* Section 1 — Hero */}
-        <section id="hero" className="flex flex-col items-center px-4 pt-0 pb-16 gap-8 max-w-[1200px] mx-auto text-center">
+        <section id="hero" className="flex flex-col items-center px-[48px] pt-[64px] pb-[72px] gap-8 max-w-[1200px] mx-auto text-center">
           <div className="w-full max-w-[800px] flex flex-col items-center gap-6">
             <h1 className="font-display text-5xl md:text-[80px] leading-[1.1] font-normal text-text-primary hero-heading flex flex-wrap justify-center gap-[0.25em]">
               {headingWords.map((word, i) => (
@@ -166,24 +166,24 @@ export default function LandingPage() {
             </motion.div>
           </div>
           
-          <div className="w-full flex items-center justify-center px-4 overflow-hidden">
+          <div className="w-[calc(100%+48px)] md:w-full flex items-center justify-center md:px-4 overflow-hidden">
             <motion.div 
               initial={{ opacity: 0, y: 32 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, delay: 0.3, ease: [0.22, 1, 0.36, 1] as const }}
-              className="w-full max-w-[800px] min-h-[300px] md:min-h-[460px] bg-[#0B0D0E] border border-border-strong rounded-[8px] shadow-[0_24px_64px_rgba(0,0,0,0.4)] overflow-hidden flex flex-col font-mono text-[10px] sm:text-[12px] md:text-[14px] leading-relaxed text-left"
+              className="w-full max-w-[800px] min-h-[300px] md:min-h-[460px] bg-[#0B0D0E] border border-border-strong rounded-[8px] shadow-[0_24px_64px_rgba(0,0,0,0.4)] overflow-hidden flex flex-col font-mono text-[8.5px] sm:text-[12px] md:text-[14px] leading-relaxed text-left"
             >
-              <div className="bg-surface-2 px-4 py-3 border-b border-border-strong flex items-center relative">
+              <div className="bg-surface-2 px-3 py-2 md:px-4 md:py-3 border-b border-border-strong flex items-center relative">
                 <div className="flex gap-2">
                   <div className="w-[10px] h-[10px] md:w-[12px] md:h-[12px] rounded-full bg-[#ED6A5E]"></div>
                   <div className="w-[10px] h-[10px] md:w-[12px] md:h-[12px] rounded-full bg-[#F4BF4F]"></div>
                   <div className="w-[10px] h-[10px] md:w-[12px] md:h-[12px] rounded-full bg-[#61C554]"></div>
                 </div>
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-text-muted text-[10px] md:text-[13px]">
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-text-muted text-[9px] md:text-[13px]">
                   zerion — fleet status
                 </div>
               </div>
-              <div className="p-4 md:p-10 text-text-primary whitespace-pre overflow-x-auto flex-1 flex flex-col justify-center">
+              <div className="p-3 md:p-10 text-text-primary whitespace-pre overflow-x-auto flex-1 flex flex-col justify-center">
                 <div className="inline-block text-left min-w-fit">
                   {terminalLines >= 1 && <div><span className="text-accent">$</span> zerion fleet status</div>}
                   {terminalLines >= 2 && <div><br/></div>}
@@ -209,18 +209,22 @@ export default function LandingPage() {
         <div className="section-divider">◆</div>
 
         {/* Section 2 — The Problem */}
-        <section id="problem" className="py-[120px] px-4 max-w-[760px] mx-auto">
+        <section id="problem" className="py-[64px] px-[48px] max-w-[760px] mx-auto">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-8 h-[1px] bg-accent"></div>
+            <span className="font-mono text-[11px] tracking-[0.2em] text-accent uppercase">The Problem</span>
+          </div>
           <motion.h2 
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-80px" }}
             transition={{ duration: 0.6 }}
-            className="font-sans text-[28px] font-medium mb-[48px] text-text-primary"
+            className="font-display text-4xl md:text-5xl font-normal mb-[32px] text-text-primary"
           >
-            The Problem
+            Agents run dry. Capital sits idle.
           </motion.h2>
 
-          <div className="space-y-[64px]">
+          <div className="space-y-[36px]">
             {[
               {
                 num: "1",
@@ -247,10 +251,10 @@ export default function LandingPage() {
                 <div className="hidden md:flex flex-col items-center h-full relative min-h-[100px]">
                   {/* Vertical Track Segments */}
                   {i === 0 && (
-                    <div className="absolute top-[18px] bottom-[-64px] w-[1px] bg-border-strong"></div>
+                    <div className="absolute top-[18px] bottom-[-36px] w-[1px] bg-border-strong"></div>
                   )}
                   {i === 1 && (
-                    <div className="absolute top-0 bottom-[-64px] w-[1px] bg-border-strong"></div>
+                    <div className="absolute top-0 bottom-[-36px] w-[1px] bg-border-strong"></div>
                   )}
                   {i === 2 && (
                     <div className="absolute top-0 h-[18px] w-[1px] bg-border-strong"></div>
@@ -299,7 +303,7 @@ export default function LandingPage() {
 
         {/* Section 3 — Architecture */}
         <Section id="architecture">
-          <h2 className="font-sans text-[28px] font-medium mb-12 text-center text-text-primary">How It Works</h2>
+          <h2 className="font-sans text-[28px] font-medium mb-[32px] text-center text-text-primary">How It Works</h2>
           <div className="w-full flex items-center justify-center overflow-x-auto pb-4">
             <div className="w-full max-w-3xl flex justify-center">
               <svg viewBox="0 0 800 500" className="w-full h-auto" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -343,9 +347,9 @@ export default function LandingPage() {
         <div className="section-divider">◆</div>
 
         {/* Section 4 — Five Policies */}
-        <section id="policies" className="py-[120px] px-4 max-w-[1100px] mx-auto">
+        <section id="policies" className="py-[64px] px-[48px] max-w-[1100px] mx-auto">
           <motion.h2 initial={{ opacity: 0, y: 32 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-80px" }} transition={{ duration: 0.6 }} className="font-sans text-[28px] font-medium mb-2 text-center text-text-primary">Five Composable Policies</motion.h2>
-          <motion.p initial={{ opacity: 0, y: 32 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-80px" }} transition={{ duration: 0.6, delay: 0.1 }} className="text-text-secondary text-center mb-16 max-w-2xl mx-auto font-sans">
+          <motion.p initial={{ opacity: 0, y: 32 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-80px" }} transition={{ duration: 0.6, delay: 0.1 }} className="text-text-secondary text-center mb-[32px] max-w-2xl mx-auto font-sans">
             Every action is gated by all five. Adding a policy requires zero changes to other code.
           </motion.p>
           
@@ -354,7 +358,7 @@ export default function LandingPage() {
             initial="hidden" 
             whileInView="visible" 
             viewport={{ once: true, margin: "-80px" }} 
-            className="grid grid-cols-1 md:grid-cols-2 gap-6"
+            className="grid grid-cols-1 md:grid-cols-2 gap-[12px]"
           >
             {[
               { id: "allowlist", title: "allowlist", icon: Shield, desc: "Destination address must be registered in the fleet. No send to unknown wallets, ever." },
@@ -365,8 +369,8 @@ export default function LandingPage() {
             ].map((policy) => (
               <motion.div key={policy.id} variants={itemVariants} className={`policy-card bg-surface-1 border border-border-subtle rounded-[6px] p-6 ${policy.colSpan ? "md:col-span-2" : ""}`}>
                 <h3 className="font-mono text-[13px] text-accent mb-4">{policy.title}</h3>
-                <div className="flex gap-4 items-start">
-                  <div className="policy-icon-wrapper flex-shrink-0">
+                <div className="flex gap-6 items-start">
+                  <div className="policy-icon-wrapper w-10 h-10 flex-shrink-0">
                     <policy.icon className="text-accent" size={20} strokeWidth={1.5} aria-hidden="true" />
                   </div>
                   <div>
@@ -384,16 +388,16 @@ export default function LandingPage() {
         {/* Section 5 — Built on Zerion */}
         <Section id="zerion">
           <div className="max-w-[600px] mx-auto flex flex-col items-center text-center">
-            <h2 className="font-sans text-[28px] font-medium mb-6 text-text-primary">Built on Zerion</h2>
+            <h2 className="font-sans text-[28px] font-medium mb-[32px] text-text-primary">Built on Zerion</h2>
             
             {/* Horizontal Lockup */}
-            <div className="flex items-center justify-center gap-4 mb-6">
+            <div className="flex items-center justify-center gap-4 mb-4">
               <div className="w-[40px] h-px bg-accent"></div>
               <div className="font-sans font-medium text-[18px] text-text-primary tracking-[0.15em]">ZERION</div>
               <div className="w-[40px] h-px bg-accent"></div>
             </div>
 
-            <p className="text-text-secondary mb-10 leading-relaxed">
+            <p className="text-text-secondary mb-5 leading-relaxed">
               Every swap, bridge, and send routes through the Zerion CLI. Quartermaster is a policy and orchestration layer — not a router. Zerion stays the execution engine.
             </p>
             
@@ -407,7 +411,7 @@ export default function LandingPage() {
 
         {/* Section 6 — Demo Video */}
         <Section id="demo">
-          <h2 className="font-sans text-[28px] font-medium mb-12 text-center text-text-primary">See It Run</h2>
+          <h2 className="font-sans text-[28px] font-medium mb-[32px] text-center text-text-primary">See It Run</h2>
           <div className="w-full max-w-[900px] mx-auto aspect-video bg-surface-1 border border-border-subtle rounded-[6px] overflow-hidden flex items-center justify-center relative shadow-lg">
             {/* Styled poster fallback container */}
             <div className="absolute inset-0 bg-[#0B0D0E] flex flex-col items-center justify-center z-10">
@@ -422,7 +426,7 @@ export default function LandingPage() {
         </Section>
       </main>
 
-      <footer className="py-8 text-center text-text-muted border-t border-accent/30 bg-transparent relative z-10">
+      <footer className="py-[20px] px-[48px] text-center text-text-muted border-t border-accent/30 bg-transparent relative z-10">
         <div className="flex justify-center gap-6 text-[13px] font-sans">
           <a href="https://github.com/winsznx/quartermaster" className="hover:text-text-primary transition-colors">GitHub</a>
           <a href="#" className="hover:text-text-primary transition-colors">Colosseum Frontier</a>

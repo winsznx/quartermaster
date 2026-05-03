@@ -1,27 +1,23 @@
 'use client'
 
+import { Settings } from 'lucide-react'
+import { EmptyState } from '@/components/empty-state'
+
 export default function SettingsPage() {
   return (
-    <div>
-      <h1 style={{ fontSize: 28, fontWeight: 500, marginBottom: 8 }}>
-        Settings
-      </h1>
-      <p style={{ color: 'var(--color-text-secondary)', marginBottom: 32 }}>
-        Read-only configuration view.
-      </p>
-      <div style={{
-        border: '1px dashed var(--color-border-subtle)',
-        borderRadius: 6,
-        padding: 48,
-        textAlign: 'center',
-        color: 'var(--color-text-muted)',
-        fontFamily: 'var(--font-jetbrains-mono)'
-      }}>
-        Modify settings via CLI:<br/>
-        <span style={{ color: 'var(--color-accent)', marginTop: 12, display: 'block' }}>
-          zerion qm policy set &lt;name&gt; &lt;param&gt;=&lt;value&gt;
-        </span>
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-[28px] font-medium text-text-primary tracking-tight">Settings</h1>
+        <p className="text-sm text-text-secondary mt-1">
+          Read-only configuration. Edit via CLI.
+        </p>
       </div>
+
+      <EmptyState 
+        icon={Settings}
+        message="Daemon offline. Start it to load configuration."
+        cli="zerion qm run"
+      />
     </div>
   )
 }

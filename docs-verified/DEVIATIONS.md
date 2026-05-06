@@ -142,6 +142,26 @@ The pivot keeps the production-correctness story intact: judges see real testnet
 
 ## Doc-Verification Drift
 
+### 2026-05-06 — Phase 4 dependency pins (hono / @hono/node-server / pino)
+
+**What deviated:** PRD §21.2 pinned versions table — pino starting point.
+
+**From:** `pino 9.x` (PRD §21.2 starting point).
+
+**To:** `pino@10.3.1` (exact, no caret). pino v10 is the current stable line; v9 is in maintenance only. Surface we consume (root logger, child loggers, level methods) is unchanged from v9. Snapshot in `docs-verified/pino.md` with content sha256 + relevant migration notes.
+
+**Also pinned (no drift, inside spec):**
+- `hono@4.12.17` (PRD §21.2 said `hono 4.x` — inside range). Snapshot in `docs-verified/hono.md`.
+- `@hono/node-server@2.0.1` — required Node adapter for Hono. Not in PRD §21.2; added at Phase 4. Logged here for completeness.
+
+**Why:** pino bump for the same reason as zod 3 -> 4: latest stable line picked at first use to avoid a future migration. Hono and the Node adapter are exactly what PRD §21.2 anticipated.
+
+**Follow-up:**
+- Re-snapshot before each minor bump.
+- Phase 6 CORS expansion will re-touch `docs-verified/hono.md`.
+
+---
+
 ### 2026-05-06 — zod major-version bump from PRD §21.2
 
 **What deviated:** PRD §21.2 pinned versions table.

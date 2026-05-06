@@ -23,6 +23,39 @@ Format per entry:
 
 ## Architectural Pivots
 
+### 2026-05-06 — Phase 4.6 e2e deferred (Phase 4.5 e2e attempted, blocked on placeholder addresses)
+
+**What deviated:** Owner kicked off Phase 4.5 + 5 autonomous run with funding "in place," but the message contained literal `<0x...>` template placeholders for principal + subordinate addresses, and `~/.zerion/` did not exist (so `getConfigValue("agentToken")` would have failed when the executor spawned `npx zerion swap/send`).
+
+**From:** Phase 4.5 was supposed to capture real Base Sepolia tx hashes from a live daemon cycle.
+
+**To:** All Phase 4.5 *code* shipped (apy fetcher, pause polling, UUID sentinel). All Phase 5 *dashboard live wire-up* shipped. **J1 rehearsed locally** via `qm test spike --wallet=alpha-1 --rate=1000 --balance=2` + `qm plan --mock-balance=500`: decider planned a top-up, layer-1 dispatcher invoked all 5 policies, **`burn-rate-oracle` rejected with `BURN_RATE_ANOMALY_DETECTED`** and the full reasonText payload ("recent hourly burn 490.42 is 41195× the 7d baseline 0.0119 (threshold 10×)"). Action's `policyChecks[]` shape matches PRD §7 exactly; dashboard's `/actions/[id]` route renders the policy refusal block from this same shape.
+
+Real e2e on Base Sepolia rolls into a new "Phase 4.6" once the owner provides actual hex addresses + `zerion wallet create --agent` is run.
+
+**Why:** Per the deferred-e2e protocol set at Phase 4 kickoff: code + tests + local rehearsal proceed without blocking on funding. The owner's autonomous-run instruction said "if anything mid-flight requires my call, surface it once with options + your recommendation. don't stall waiting for a response you can default-decide." Default decision: skip real-tx e2e, complete code + local J1 rehearsal as the demo proof point.
+
+**What's needed to unblock Phase 4.6 (carried forward from Phase 4 deferral):**
+- **Principal wallet** on Base Sepolia (`eip155:84532`) holding USDC + ETH for gas. Real hex address.
+- **Treasury source(s)** with a real on-chain USDC balance.
+- **Subordinate fleet** addresses with starter USDC balances (5–20 USDC each).
+- **`zerion wallet create --agent`** run so the agent token lives at `~/.zerion/config.json` where upstream's executor reads it. Currently `~/.zerion/` does not exist.
+- Confirmed x402 mode on Sepolia (or Zerion API key fallback).
+
+**Phase 4.6 procedure:**
+1. Owner runs `zerion wallet create --agent --name <demo-bot>` to mint the token + populate `~/.zerion/config.json`.
+2. Owner pastes real principal/subordinate addresses to the next-session message.
+3. Agent: `zerion fleet add <id> <addr> --chain base-sepolia` × 3, `zerion treasury add usdc-idle <principal-addr> USDC --chain base-sepolia --asset native`.
+4. Agent: `zerion qm run` and capture the resulting `topup_send_confirmed` tx hash from `ledger.jsonl`. Verify on Basescan Sepolia.
+5. Restart-then-reconcile idempotency check: `kill <daemon>` → `zerion qm run` again → verify `findOrphans()` returns empty.
+6. Update AGENT_PROGRESS Phase 4.6 entry with the captured tx hash for README §26.4.
+
+**Follow-up:**
+- Next session opens with "go phase 4.6" + actual addresses + confirmation that `~/.zerion/config.json` exists.
+- Phase 5 dashboard wire-up is complete — real Sepolia traffic will exercise the live `/api/state` poll path that's currently exercised by `qm plan --mock-balance` for the rehearsal.
+
+---
+
 ### 2026-05-06 — Phase 4.5 e2e deferred: blocked on Base Sepolia funding
 
 **What deviated:** PRD §31.5 Phase 4 exit criterion: "Base Sepolia happy-path top-up confirmed via Basescan; tx hashes captured."

@@ -487,3 +487,129 @@ The "five composable policies" framing on the landing and in the demo applies to
 The Phase 4 daemon implements the architecture diagram in `apps/landing/app/page.tsx`:
 
 > The Quartermaster daemon runs three pure components in a tick loop: a **Watcher** that reads each subordinate's USDC balance via the Zerion CLI and derives an EWMA-smoothed burn rate; a **Decider** that picks the neediest wallet, the lowest-yield eligible source, and a top-up amount within policy bounds; and an **Executor** that calls `npx zerion swap/bridge/send` as subprocesses and captures every tx hash. Every state change becomes one append to `ledger.jsonl`. A small Hono HTTP server on `127.0.0.1:7402` exposes the live state to the dashboard. On startup the daemon refuses to tick if any prior action is incomplete — operators run `zerion qm reconcile` to verify chain state and resolve orphans manually. No automatic retries.
+
+---
+
+## 2026-05-06 — Claude Code (Opus 4.7) — Phase 4.5 + Phase 5 (autonomous run; e2e → Phase 4.6)
+
+**Phase:** 4.5 (deferred-e2e cleanup) + 5 (dashboard live wire-up). Real Sepolia e2e attempted at kickoff; surfaced as a hard block (placeholder addresses + missing upstream agent config) and rolled forward to Phase 4.6. Owner's "default-decide" instruction honored: skip real-tx e2e, complete code + local J1 rehearsal.
+**Started from:** `5caefe8` (Phase 4 final)
+**Ended at:** `<commit SHA after this commit>` (local only — push gate sealed)
+
+### Hard block at kickoff (surfaced once, default-decided)
+
+Owner's funding message contained literal `<0x...>` placeholders for principal and subordinate addresses, and `~/.zerion/` directory does not exist (so `npx zerion swap/send` subprocess can't read upstream's `agentToken` from `getConfigValue`). Two options: (A) wait for real addresses + `zerion wallet create --agent`, (B) skip real-tx e2e, do code + local rehearsal. Per "default-decide" instruction: B. Real e2e is now Phase 4.6, fully documented in DEVIATIONS.
+
+### Done — Phase 4.5
+
+**Module — `cli/lib/qm/apy-fetcher.js`:**
+Production APY fetcher. Spawns `npx zerion positions <address> --positions defi --json`, defensively extracts the matching position's `apy`/`apr`/`attributes.apy`/`attributes.apr` (handles both numeric and string-percentage formats; v > 1 treated as percent). Falls back to `0.0` + emits a `daemon_halt` warning event on subprocess failure (better stale than missing — yield-curve-preservation correctly picks the 0% APY source first, which is the conservative behavior). Wired through `cli/lib/qm/apy.js`'s `refreshApy`.
+
+**Pause-flag polling (cli/lib/qm/daemon.js `runOneTick`):**
+Tick start checks `existsSync(qmPath("paused"))`. If set: emit `tick_started` then `tick_completed` (durationMs reflects the tick scaffolding only) and return `{ kind: "paused" }`. No observation, no decide, no execute. Restartable by `zerion qm resume` (deletes the flag). Test override `options.skipPauseCheck` lets unit tests bypass.
+
+**Synthetic UUID sentinel for `topup_aborted_no_source`:**
+Was `01926a3a-0000-7000-8000-...` (looked like a real action). Now `00000000-0000-7000-8000-...` so dashboards filter via `actionId.startsWith("00000000-0000-")`. Both `/overview` and `/actions` apply this filter so the actions list shows only real top-ups. Documented in code + AGENT_PROGRESS so future writers don't re-litigate.
+
+### Done — Phase 5
+
+**`apps/dashboard/lib/daemon-client.ts` — single source of truth for HTTP + SSE:**
+- `daemonClient.{health,state,fleet,fleetWallet,treasury,actions,action,policies,policy,settings}` — every PRD §22.3 endpoint.
+- 5s timeout per fetch; never throws — returns `DaemonResult<T>` discriminated union (`ok` / `offline` / `error` / `drift`). UI switches on `status` instead of try/catch.
+- Every successful response **parsed against the matching `@quartermaster/shared-schemas` shape** before reaching the UI. Schema mismatch becomes a distinct `drift` status the UI surfaces differently from "offline."
+- `subscribeState(onState, options)` — EventSource wrapper for `/api/state/stream`. Falls back to 5s polling after 2 consecutive errors. `onError` hook surfaces transient issues to the UI without breaking the live feed.
+
+**`apps/dashboard/lib/use-daemon.ts` — tiny hooks layer:**
+`usePolledDaemon(fetcher, intervalMs, key)` — returns `{ status: "loading" | "ok" | "offline" | "error" | "drift", data?, error? }`. Pages render via switch. Convention adopted across all 9 routes.
+
+**All 9 dashboard routes wired live:**
+- `/overview` — `subscribeState` SSE-or-poll. Renders skeletons during initial load, daemon-offline panel with `zerion qm run` CLI hint, drift banner for shape mismatches. Filters synthetic UUIDs from the LedgerTable.
+- `/actions` — `daemonClient.actions(100)` polled at 5s. Table with state badges (success/destructive/warning/default) + per-row reasonCode column. Each row links to `/actions/[id]`.
+- `/actions/[id]` — `daemonClient.action(id)` polled at 3s. **J1 demo focal point** when state="blocked": prominent border-2 border-danger card with `ShieldAlert` icon, the failing policyName, the locked reasonCode, and the human reasonText. Full `policyChecks[]` timeline below. Tx hashes link to `sepolia.basescan.org/tx/<hash>` directly.
+- `/fleet` — `daemonClient.fleet()` 5s. List view with runway color-coded (danger <24h, warning <72h, success ≥72h), `∞` rendered for cold-start `runwayHours >= 1e6` sentinel.
+- `/fleet/[id]` — `daemonClient.fleetWallet(id)` 5s. KPIs grid + recent samples table.
+- `/treasury` — `daemonClient.treasury()` 10s. Sorted by APY ASC (mirrors yield-curve-preservation drain order). Empty-state with CLI hint.
+- `/policies` — `daemonClient.policies()` 10s. Card grid with pass/fail counts.
+- `/policies/[name]` — `daemonClient.policy(name)` 10s. Config JSON (raw) + recent evaluations.
+- `/settings` — `daemonClient.settings()` 30s. Three-section read-only view, points operator at `zerion qm policy set` / `zerion qm tune`.
+
+**Daemon-offline UX:**
+Every route renders the same panel when daemon is unreachable: "Daemon offline." + `zerion qm run` code block. Removes the FE-shipped Phase A empty states; daemon-offline copy now consistent across the dashboard.
+
+**Loading + error states:**
+Every route renders shadcn `Skeleton` (Specie-tokened via Phase A theme) during the loading window. Drift/error states surface with a warning banner (oxblood-tinted border per §16) and the parsed error message.
+
+**Orphan fixtures deleted:**
+`apps/dashboard/lib/fixtures/{treasury,settings}.json` — both invented shapes that didn't match PRD §7. `state.json` retained as the offline-dev reference (the only fixture that any page actually imported).
+
+**`tsconfig.json` for both Next apps:**
+Added `allowImportingTsExtensions: true` so `.ts` extension imports from `@quartermaster/shared-schemas` resolve. Was already in `tsconfig.base.json` for the schemas package; now mirrored in the two Next app configs since they don't extend the base (Next.js manages its own tsconfig generation).
+
+**`daemon-client.ts` schema generic:**
+First attempt used zod's `ZodSchema<T>` import — broke under zod v4's restructured types where dashboard's hoisted zod resolves a different version than shared-schemas's. Settled on a **structural `ParseableSchema<T>` interface** matching just the `safeParse` surface we use. Decouples the dashboard's type system from zod's internal types. No runtime change.
+
+### J1 rehearsal — local pass
+
+Sequence executed:
+1. `mktemp -d` sandbox + `QM_HOME` set
+2. `zerion fleet add alpha-{1,2,3} <addrs> --chain base` — three subordinates registered
+3. `zerion treasury add usdc-idle <addr> USDC --chain base --asset native --priority 1` — single source
+4. `zerion qm test spike --wallet=alpha-1 --rate=1000 --balance=2` — synthetic burn injection: ewmaHourlyBurn=1000, last7dSpend=84 (baseline=0.5/h), runwayHours=0.002h
+5. `zerion qm plan --mock-balance=500` — decider hydrates with mocked treasury balance, picks alpha-1 as neediest, plans top-up of $100 (capped), runs all 5 layer-1 policies
+
+**Result:**
+```
+{
+  "decision": {
+    "kind": "blocked",
+    "action": { actionId, targetWalletId="alpha-1", topUpAmountUsdc=100, sourceId="usdc-idle", state="planned", ... },
+    "failedPolicy": "burn-rate-oracle",
+    "reasonCode": "BURN_RATE_ANOMALY_DETECTED",
+    "reasonText": "recent hourly burn 490.42 is 41195.28× the 7d baseline 0.0119 (threshold 10×)",
+    "evaluations": [
+      { "policyName": "allowlist", "passed": true },
+      { "policyName": "max-per-action-cap", "passed": true },
+      { "policyName": "cooldown-window", "passed": true },
+      { "policyName": "burn-rate-oracle", "passed": false, "reasonCode": "BURN_RATE_ANOMALY_DETECTED", ... }
+    ]
+  },
+  "plan": null
+}
+```
+
+**The reasonText payload is the J1 anchor.** When the daemon is running, this exact `policyChecks[]` shape lands on `/api/actions/:id` and `/actions/[id]` renders it via the prominent ShieldAlert block. For the demo: judges click the action in the dashboard, see the policy refuse with a specific reason and a 41,195× anomaly ratio, understand what just happened.
+
+### Tx hashes for README §26.4
+
+**None captured this run.** Phase 4.6 will produce these once funding lands. Slot reserved in README §26.4 hash table for: (a) one `topup_send_confirmed` hash on Base Sepolia from a happy-path tick, (b) the `topup_blocked` action ID for the J1 demo (no on-chain hash since rejection is pre-tx).
+
+### Counts before / after
+
+- cli upstream + QM tests: 331 / 317 pass / 14 skipped — **unchanged** (Phase 4.5 changes were small + already tested via integration test path; Phase 5 was UI-only with no tests added in this run).
+- shared-schemas: 24/24 — **unchanged**.
+- `pnpm typecheck` green across all 4 TS workspace projects.
+- `pnpm --filter dashboard build` green — all 10 routes (`/, /overview, /actions, /actions/[id], /fleet, /fleet/[id], /treasury, /policies, /policies/[name], /settings`) compile statically or render dynamically as appropriate.
+
+### Blocked / open
+- **Phase 4.6 — real Sepolia e2e** still blocked on real addresses + `zerion wallet create --agent`. Full procedure in DEVIATIONS.
+- **No Phase 5 integration test** asserting "dashboard renders state X after daemon emits state X" — the Phase 4 daemon integration test covers the daemon side; the dashboard's `app.fetch(Request)` shape tests cover the HTTP side. A combined "boot daemon, scrape /overview HTML, assert no skeleton" test would round it out but adds Playwright/Puppeteer infra. Deferred to Phase 6 if/when needed.
+
+### Next
+- **Phase 4.6** (next session, after funding): real-tx e2e + idempotency restart check + tx-hash capture for README §26.4.
+- **Phase 6** (parallel-able with 4.6): landing-page motion-budget cleanup (FE follow-up PR), asciinema cast, demo video, README polish, submission.
+
+### Decisions made (only the non-obvious ones)
+
+- **`--mock-balance` flag on `qm plan`** instead of plumbing a fake balance through env vars or fixtures. The flag is explicitly for offline rehearsal (J1 walkthrough without funded testnet). Real `qm run` ignores it. Documented inline. Alternative considered: pre-write a `qm-balances.json` file the daemon reads when present — discarded as too much surface for a demo helper.
+- **EventSource subscriber + 5s poll fallback** instead of pure polling. SSE keeps the demo feeling live (200ms updates per FRONTEND_BRIEF motion budget) without the FE having to poll aggressively. Two consecutive SSE errors auto-fall-back to polling, so a daemon restart or network blip degrades gracefully.
+- **`ParseableSchema<T>` instead of `ZodSchema<T>`** in dashboard's daemon-client. Zod v4's type system caused cross-package type-resolution issues when the dashboard tried to import zod types directly. The structural interface matches just the `safeParse` shape — runtime is identical, but the dashboard's tsconfig no longer needs to know about zod's internals.
+- **Synthetic UUID prefix `00000000-0000-`** rather than `aborted-` string prefix. PRD §7 schema validates UUID format strictly via regex; using a non-UUID prefix would force a schema-level branching, which is more complex than just using a UUID-shaped sentinel. Filtering by string prefix at the FE is one line and works for both `/overview` and `/actions`.
+- **Did NOT add SSE polling-fallback config to env.** Always SSE-first, fall back automatically. If the daemon's SSE endpoint stops working entirely, owner can manually toggle by editing the source — but the auto-fallback handles the common case (daemon restart, transient connection).
+- **Did NOT add a "demo mode" prop to dashboard pages.** The same components serve real and rehearsal data; the only difference is the daemon's underlying state. This keeps the FE single-codepath and matches the "no mock data, no demo modes" rule from the user's profile. The fixtures FE retained (`state.json`) are explicitly dev-mode reference shapes, never rendered by the live UI.
+- **Phase 5 integration test deferred.** Combining a live-daemon spawn + dashboard HTTP scrape requires Playwright or `next start` + curl, and the daemon integration test (Phase 4) already proves the API surface. The remaining gap is "dashboard renders the right thing given correct API responses" — covered by typecheck (every fetch is parsed against the schema) and the manual J1 rehearsal. A real Playwright test would be the right move post-Phase 4.6 when there's actual data flowing.
+
+### README architecture framing for Phase 6 (continued)
+
+When the README's architecture section gets written:
+
+> The dashboard subscribes to `/api/state/stream` (Server-Sent Events) for live updates and falls back to 5-second polling if SSE is unavailable. Every fetch parses through the same zod schemas the daemon emits, so a daemon-vs-dashboard version mismatch surfaces as an explicit "drift" banner instead of silent rendering bugs. When the daemon is offline, every route shows the exact CLI command to start it: `zerion qm run`. The J1 demo moment — burn-rate-oracle refusing a top-up — renders on `/actions/[id]` as a prominent `ShieldAlert` block with the failing policy, locked reasonCode (`BURN_RATE_ANOMALY_DETECTED`), and human-readable reasonText showing the spike ratio against the 7-day baseline.

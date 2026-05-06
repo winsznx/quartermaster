@@ -13,7 +13,13 @@ import { decide } from "../../lib/qm/decider.js";
 
 export default async function qmPlan(_args, flags) {
   try {
-    const state = await hydrateState();
+    // --mock-balance lets you rehearse J1 / decider walkthrough without funded
+    // testnet wallets. Pass a number to use as the balance for every source.
+    // No effect when the daemon is running for real (Phase 4.6 onward).
+    const mockBalance = flags["mock-balance"] != null ? Number(flags["mock-balance"]) : null;
+    const balanceFetcher = mockBalance != null ? async () => mockBalance : undefined;
+
+    const state = await hydrateState({ balanceFetcher });
     const observations = state.observations ?? [];
     const recentSamples = observations.filter((o) => o.sample).map((o) => o.sample);
     const target = observations.find((o) => o.underThreshold && !o.failed);

@@ -16,6 +16,7 @@
 
 import {
   closeSync,
+  existsSync,
   openSync,
   unlinkSync,
   writeFileSync,
@@ -220,6 +221,18 @@ export async function runOneTick(state, options = {}) {
 
   appendEvent({ type: "tick_started", tickId, ts: now });
 
+  // Pause check — Phase 4.5. If `paused` flag file exists, skip the work
+  // but still emit tick_completed so observability is consistent.
+  if (!options.skipPauseCheck && existsSync(qmPath("paused"))) {
+    appendEvent({
+      type: "tick_completed",
+      tickId,
+      durationMs: Date.now() - start,
+      ts: new Date().toISOString(),
+    });
+    return { tickId, decision: { kind: "paused" }, executed: null };
+  }
+
   // Build observations on the FLY so freshly-burned balances are seen, not
   // the stale snapshot from hydrate.
   const wallets = listWallets();
@@ -315,8 +328,12 @@ export async function runOneTick(state, options = {}) {
 }
 
 function deriveTransientId() {
-  // Simple UUID v7-ish for events that don't have a real action.
-  return "01926a3a-0000-7000-8000-" + Math.floor(Math.random() * 1e12).toString(16).padStart(12, "0").slice(0, 12);
+  // Phase 4.5: UUIDv7-shape sentinel with a recognizable "0000-0000-0000"
+  // sequence in the time-low field. Dashboards render `topup_aborted_no_source`
+  // events with action IDs starting `00000000-0000-` as "system" rather than
+  // user-visible action records — keeps the actions list focused on real
+  // top-ups. See Phase 5 dashboard filter at apps/dashboard/lib/actions.ts.
+  return "00000000-0000-7000-8000-" + Math.floor(Math.random() * 1e12).toString(16).padStart(12, "0").slice(0, 12);
 }
 
 function sendOnlyPlan(action) {

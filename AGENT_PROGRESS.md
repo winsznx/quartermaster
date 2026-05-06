@@ -613,3 +613,77 @@ Sequence executed:
 When the README's architecture section gets written:
 
 > The dashboard subscribes to `/api/state/stream` (Server-Sent Events) for live updates and falls back to 5-second polling if SSE is unavailable. Every fetch parses through the same zod schemas the daemon emits, so a daemon-vs-dashboard version mismatch surfaces as an explicit "drift" banner instead of silent rendering bugs. When the daemon is offline, every route shows the exact CLI command to start it: `zerion qm run`. The J1 demo moment — burn-rate-oracle refusing a top-up — renders on `/actions/[id]` as a prominent `ShieldAlert` block with the failing policy, locked reasonCode (`BURN_RATE_ANOMALY_DETECTED`), and human-readable reasonText showing the spike ratio against the 7-day baseline.
+
+---
+
+## 2026-05-06 — Claude Code (Opus 4.7) — Phase 4.6-prep: autonomous-gap patches
+
+**Phase:** 4.6-prep. Phase 4.6 (real Sepolia e2e) was blocked by three autonomous gaps. This entry closes the code side; the operator runs `cli/BOOTSTRAP.md` to close the keystore/agent-token side, then Phase 4.6 proceeds.
+**Started from:** `6280d37` (rip commit on `phase-1-7/integration`)
+**Ended at:** `<commit SHA after this commit>` (local only — push gate sealed)
+
+### Done
+
+**1. Chain registry patch — `cli/cli/lib/chain/registry.js`:**
+
+Added `base-sepolia` (eip155:84532, viem `baseSepolia`) as an env-flag-gated extension. `QM_ENABLE_BASE_SEPOLIA=1` activates a sibling `QM_CHAIN_MAP_EXTENSIONS` map that the helpers (`SUPPORTED_CHAINS`, `CAIP2_MAP`, `getChain`, `getViemChain`) consult alongside upstream's `CHAIN_MAP`. Without the flag, behavior is byte-identical to upstream — `tests/unit.test.mjs` "contains 14 chains" still passes. With the flag, `validateChain('base-sepolia')` accepts and `getViemChain('base-sepolia').id === 84532`.
+
+The opt-in design was forced by `tests/unit.test.mjs:226`'s hard `=== 14` assertion. Mutating CHAIN_MAP would have required editing the upstream test, which the Phase 1 fork contract prohibits. Logged in DEVIATIONS *Architectural Pivots*.
+
+**2. `cli/lib/qm/env.js` — minimal `.env.local` loader:**
+
+Walks up from the module's location looking for `.env.local`, parses `KEY=VALUE` lines (comments + blank lines + quoted values handled). Three exports:
+- `loadEnvLocal(options)` — return parsed values + path
+- `mergeIntoProcessEnv()` — merge into `process.env` without overwriting existing values
+- `buildSubprocessEnv(parentEnv?)` — return the env object passed to spawned subprocesses, always includes `QM_ENABLE_BASE_SEPOLIA=1`
+
+15 tests covering parse cases (quotes, comments, "=" inside values, malformed lines), find-walk-up behavior, and the `buildSubprocessEnv` contract that operator-set parent env wins over `.env.local`. **No new dependency** — would have been ~30 lines of `dotenv` overhead for 15 lines of parsing.
+
+**3. Wired env loader into all spawn sites:**
+- `cli/lib/qm/portfolio-fetcher.js` — `npx zerion positions` calls
+- `cli/lib/qm/executor.js` — `npx zerion swap/bridge/send` calls
+- `cli/lib/qm/apy-fetcher.js` — `npx zerion positions` for APY discovery
+- `cli/commands/qm/test.js` — `npx zerion send` burn loop in `qm test spike`
+- `cli/commands/qm/run.js` — daemon startup calls `mergeIntoProcessEnv()` so the daemon process itself sees the API key (read paths use it directly, not via subprocess)
+
+Every spawn site now passes `{ env: buildSubprocessEnv() }` explicitly. Subprocesses see ZERION_API_KEY + QM_ENABLE_BASE_SEPOLIA=1.
+
+**4. `cli/BOOTSTRAP.md` — operator runbook:**
+
+8 numbered sections + troubleshooting + verify-it-worked checklist. Covers:
+- Sourcing `.env.local` for manual bootstrap commands
+- `wallet import` for funded principal (interactive — operator pastes key + sets passphrase)
+- `wallet create` ×3 for subordinates (interactive — passphrases)
+- `agent create-token` with `--chains base,base-sepolia` and `--deny-approvals --deny-transfers` policy flags (interactive)
+- `wallet list --pretty` to capture the addresses to send back
+- Funding subordinates with USDC + small native ETH for gas
+- Final checklist: 4 wallets, agent token in config.json, fundings on Basescan
+- Reply template for what to send the agent
+
+`QM_ENABLE_BASE_SEPOLIA=1` prefix is documented for any manual `--chain base-sepolia` use during bootstrap (only matters for `agent create-token --chains` and the funding `send` calls).
+
+**5. Tests:**
+- `tests/qm-env.test.mjs` — 15 tests for env parser/loader/builder
+- `tests/qm-chain-registry-patch.test.mjs` — 8 tests verifying the env-flag opt-in works correctly in fresh subprocesses (without flag → 14 chains, base-sepolia rejected; with flag → 15 chains, base-sepolia accepted via `validateChain()`, viem chain resolves)
+- `tests/qm-executor-env.test.mjs` — 2 tests asserting executor's stub-spawn captures the right env (`QM_ENABLE_BASE_SEPOLIA=1`, parent env keys preserved)
+
+**Counts before / after Phase 4.6-prep:**
+- cli upstream + QM tests: 331 / 317 pass / 14 skipped → after **356 / 342 pass / 14 skipped**. Upstream's 176 unchanged (CHAIN_IDS test still asserts 14 because flag is off in test runs). +25 new prep tests.
+- shared-schemas: 24/24 — unchanged.
+- `pnpm typecheck` green across all 4 TS workspace projects.
+
+### Blocked / open
+- **Phase 4.6 e2e** still blocked on the operator running `cli/BOOTSTRAP.md` steps 1–7. After that the agent has: principal/subordinate addresses, agent token in `~/.zerion/config.json`, subordinates funded. Then Phase 4.6 proceeds: fleet add → treasury add → tighten policy → start daemon → spike alpha-1 (happy path) → spike alpha-2 (J1 block) → kill mid-cycle → restart → reconcile → capture all tx hashes for README §26.4.
+
+### Next
+- **Operator** runs `cli/BOOTSTRAP.md`. Replies with the addresses + chain choice (base-sepolia preferred for hackathon).
+- **Agent** drives Phase 4.6 in the next session: registers fleet/treasury, runs daemon, spikes both subordinates, captures hashes, screenshots dashboard `/actions/[id]` for the J1 demo.
+
+### Decisions made (only the non-obvious ones)
+
+- **Env-flag opt-in over CHAIN_MAP mutation.** Owner's instruction was contradictory ("add to CHAIN_MAP" + "176 tests pass unchanged"). The hard `=== 14` test assertion forces opt-in. Documented inline + DEVIATIONS so the next reader understands why the patch lives in a sibling map.
+- **Wrote a 15-line parser instead of pulling `dotenv`.** `.env.local` format is dead simple and the executor's per-action spawn cost matters; one less dep on the require graph saves a few ms per subprocess startup over the demo. If the demo grows to need `.env` interpolation or multiline values, the parser swaps in cleanly.
+- **`buildSubprocessEnv` always sets `QM_ENABLE_BASE_SEPOLIA=1`** even when the operator's parent env already set it to something else. The flag is a hard QM contract — daemon-spawned subprocesses ALWAYS use the patched registry. There is no "QM disable" mode for spawned children; if an operator wanted upstream-only behavior they'd run upstream's CLI directly without QM commands.
+- **`mergeIntoProcessEnv()` doesn't override existing process.env keys.** Operator-set values in the actual shell (or systemd unit, etc.) win over `.env.local`. This matches `dotenv`'s default and avoids surprising operators who think their explicit `export FOO=bar` is authoritative.
+- **`cli/BOOTSTRAP.md` lives in `cli/` not at repo root.** It's CLI-bootstrap-specific, not a project-wide concern. Future bootstrap docs (e.g., dashboard env config) can live alongside their components.
+- **Did NOT touch upstream's `cli/cli/lib/util/validate.js`.** It reads `SUPPORTED_CHAINS` from the patched registry — when the flag is on, validateChain accepts `base-sepolia` automatically. The patch is contained to one file.

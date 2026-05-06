@@ -16,11 +16,18 @@ import {
   releaseLock,
   runOneTick,
 } from "../../lib/qm/daemon.js";
+import { mergeIntoProcessEnv } from "../../lib/qm/env.js";
 import { appendEvent } from "../../lib/qm/ledger.js";
 import { findOrphans } from "../../lib/qm/reconcile.js";
 import { buildApp } from "../../lib/qm/http-server.js";
 
 export default async function qmRun(_args, flags) {
+  // Load .env.local into process.env so this process (read paths, error
+  // formatters, etc.) sees the API key. Subprocess spawn sites
+  // independently call buildSubprocessEnv to ensure children get it too.
+  const { path, added } = mergeIntoProcessEnv();
+  if (path) print({ envLoaded: { path, keys: added } });
+
   if (!acquireLock()) {
     printError(
       "lock_held",

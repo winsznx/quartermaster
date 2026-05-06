@@ -17,6 +17,7 @@ import { spawn as nativeSpawn } from "node:child_process";
 
 import { TopUpAction, TxHash } from "@quartermaster/shared-schemas";
 
+import { buildSubprocessEnv } from "./env.js";
 import { appendEvent } from "./ledger.js";
 
 const DEFAULT_TIMEOUT_MS = {
@@ -40,6 +41,7 @@ function runZerion(args, { timeoutMs, spawnImpl = nativeSpawn } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawnImpl("npx", ["zerion", ...args], {
       stdio: ["ignore", "pipe", "pipe"],
+      env: buildSubprocessEnv(),
     });
     let stdout = "";
     let stderr = "";

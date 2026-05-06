@@ -25,6 +25,7 @@ import { spawn } from "node:child_process";
 
 import { print, printError } from "../../cli/lib/util/output.js";
 
+import { buildSubprocessEnv } from "../../lib/qm/env.js";
 import { getWallet } from "../../lib/fleet/registry.js";
 
 const SEND_INTERVAL_MS = 10_000; // every 10s
@@ -36,7 +37,7 @@ function runZerionSend({ walletId, to, amount }) {
     const child = spawn(
       "npx",
       ["zerion", "send", to, "USDC", String(amount), "--wallet", walletId],
-      { stdio: ["ignore", "pipe", "pipe"] },
+      { stdio: ["ignore", "pipe", "pipe"], env: buildSubprocessEnv() },
     );
     let stdout = "";
     let stderr = "";

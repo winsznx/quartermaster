@@ -16,12 +16,15 @@
 
 import { spawn } from "node:child_process";
 
+import { buildSubprocessEnv } from "./env.js";
+
 const FETCH_TIMEOUT_MS = 30_000;
 
 function runZerion(args, { timeoutMs = FETCH_TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn("npx", ["zerion", ...args], {
       stdio: ["ignore", "pipe", "pipe"],
+      env: buildSubprocessEnv(),
     });
     let stdout = "";
     let stderr = "";

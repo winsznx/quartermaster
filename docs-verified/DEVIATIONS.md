@@ -23,6 +23,45 @@ Format per entry:
 
 ## Architectural Pivots
 
+### 2026-05-06 — Phase 4.6-prep: chain registry patch (base-sepolia, env-flag-gated)
+
+**What deviated:** Upstream's `cli/cli/lib/chain/registry.js` ships 14 EVM chains plus Solana — Base mainnet is the only Base. `tests/unit.test.mjs:226` asserts `CHAIN_IDS.size === 14`, and upstream's `validateChain()` rejects any chain string not in that set. The Quartermaster daemon needs `--chain base-sepolia` to work end-to-end on testnet.
+
+**From:** No Sepolia support in upstream. Operator-direct invocations and the daemon-spawned `npx zerion ...` subprocesses both fail at `validateChain('base-sepolia')`.
+
+**To:** `cli/cli/lib/chain/registry.js` patched with a fenced QM block that adds `base-sepolia` (eip155:84532, viem `baseSepolia`) **opt-in per process** via the `QM_ENABLE_BASE_SEPOLIA=1` env var:
+
+```js
+// === BEGIN Quartermaster patch: base-sepolia ===
+const QM_PATCH_ENABLED = process.env.QM_ENABLE_BASE_SEPOLIA === "1";
+const QM_CHAIN_MAP_EXTENSIONS = QM_PATCH_ENABLED ? new Map([...]) : new Map();
+// === END Quartermaster patch ===
+```
+
+`SUPPORTED_CHAINS`, `CAIP2_MAP`, `getChain()`, `getViemChain()` are all extended to consult `QM_CHAIN_MAP_EXTENSIONS`. When the flag is unset (upstream's tests, operator-direct invocations) the extension map is empty and behavior is byte-identical to the canonical fork.
+
+The QM daemon sets the flag for every spawned subprocess via `cli/lib/qm/env.js`'s `buildSubprocessEnv()`. The flag never leaks back to upstream's test environment.
+
+**Why opt-in:** `tests/unit.test.mjs:226` is a hard `=== 14` assertion. The original instruction was "add base-sepolia to CHAIN_MAP" + "176 upstream tests pass unchanged" — these are mutually exclusive. The opt-in lets us deliver both: tests run with the flag off (=== 14 holds) and the daemon runs with it on (sees Sepolia).
+
+**Why not modify the upstream test:** the Phase 1 contract bans upstream-test edits. The whole point of the verified fork at SHA `c39fb6d` is that upstream tests stay byte-identical so future `git subtree pull` ops re-apply cleanly.
+
+**Files touched (all fenced QM blocks):**
+- `cli/cli/lib/chain/registry.js` — import baseSepolia + extension map + helper consultation
+
+**Files NOT touched:**
+- `cli/cli/lib/util/validate.js` (reads `SUPPORTED_CHAINS` — sees the flag-gated extension automatically)
+- All other upstream code
+
+**Upstreamability:** This is a clean Sepolia-support addition that upstream `zerion-ai` would likely accept as a contributor PR — testnets are a natural hackathon use case. When we open such a PR post-hackathon, the env-flag gating becomes unnecessary (upstream just adds `base-sepolia` to `CHAIN_MAP` and updates the test).
+
+**Follow-up:**
+- Phase 4.6 e2e proceeds with the flag set (daemon does this automatically)
+- Future upstream sync (next `git subtree pull`): re-apply the fenced block per the comment instructions in DEVIATIONS Phase 2 entry
+- Post-hackathon: open a contributor PR to zerion-ai adding base-sepolia + test update
+
+---
+
 ### 2026-05-06 — Phase 4.6 e2e deferred (Phase 4.5 e2e attempted, blocked on placeholder addresses)
 
 **What deviated:** Owner kicked off Phase 4.5 + 5 autonomous run with funding "in place," but the message contained literal `<0x...>` template placeholders for principal + subordinate addresses, and `~/.zerion/` did not exist (so `getConfigValue("agentToken")` would have failed when the executor spawned `npx zerion swap/send`).

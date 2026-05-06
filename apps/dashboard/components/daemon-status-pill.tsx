@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from "react";
 
+import { DAEMON_URL } from "@/lib/daemon-url";
+
 export function DaemonStatusPill() {
   const [status, setStatus] = useState<"online" | "offline">("offline");
 
   useEffect(() => {
     const checkHealth = async () => {
       try {
-        const res = await fetch("http://127.0.0.1:7402/api/health");
+        const res = await fetch(`${DAEMON_URL}/api/health`);
         if (res.ok) {
           setStatus("online");
         } else {

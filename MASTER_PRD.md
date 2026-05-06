@@ -1249,14 +1249,20 @@ These are starting points. Day 0 verification updates them.
 
 ### 21.4 Deployment targets
 
-| Surface | Deploy target |
-|---|---|
-| Forked CLI | npm under `@<scope>/zerion-fork` (optional; primary distribution is GitHub) |
-| Dashboard | LOCAL only — runs alongside the daemon on the user's machine |
-| Landing page | Vercel — free tier, custom domain |
-| Documentation | Same Vercel deploy as landing, under `/docs` (markdown rendered) |
+**Updated 2026-05-05** — pivoted from local-only to public-demo + self-host. Driven by re-read of the hackathon rubric (Demo Quality criterion: "allowing judges to understand and **test** the functionality effectively"). Local-only forces judges to clone-install-fund-run; public demo lets them click and verify. Logged under *Architectural Pivots* in `docs-verified/DEVIATIONS.md`.
 
-(Per Rule C12 default Vercel+Railway+Supabase: we use Vercel for landing, no Railway/Supabase needed because no database / no remote state.)
+| Surface | Deploy target | Notes |
+|---|---|---|
+| Forked CLI | npm under `@<scope>/zerion-fork` (optional; primary distribution is GitHub) | unchanged |
+| Landing page | **Vercel project A** — free tier, custom domain | unchanged |
+| Dashboard | **Vercel project B** — public demo UI | reads `NEXT_PUBLIC_DAEMON_URL`; falls back to `http://127.0.0.1:7402` for self-host |
+| Demo daemon | **Railway** — fresh Base Sepolia testnet wallet | testnet-only; mainnet keys never deployed |
+| Production daemon | **User's machine** — self-host per README | unchanged philosophy: principal's keys never leave their machine |
+| Documentation | Same Vercel deploy as landing, under `/docs` (markdown rendered) | unchanged |
+
+The dashboard binary is identical for the public demo and for self-host; only the env var differs. The daemon binary is identical too — Railway runs it against testnet with a demo wallet, self-hosters run it against mainnet with their own.
+
+(Updates Rule C12 default for this build: we use Vercel for landing AND dashboard, plus Railway for the demo daemon. No Supabase — still no database, the daemon is stateless from the dashboard's perspective.)
 
 ---
 

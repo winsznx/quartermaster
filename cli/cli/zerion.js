@@ -105,6 +105,23 @@ register("fleet", "remove", fleetRemove);
 register("fleet", "status", fleetStatus);
 register("treasury", "add", treasuryAdd);
 register("treasury", "list", treasuryList);
+// Phase 4: qm namespace — daemon, planner, reconcile, policy tuning, demo helpers
+import qmRun from "../commands/qm/run.js";
+import qmPause from "../commands/qm/pause.js";
+import qmResume from "../commands/qm/resume.js";
+import qmPlan from "../commands/qm/plan.js";
+import qmPolicy from "../commands/qm/policy.js";
+import qmReconcile from "../commands/qm/reconcile.js";
+import qmTune from "../commands/qm/tune.js";
+import qmTest from "../commands/qm/test.js";
+register("qm", "run", qmRun);
+register("qm", "pause", qmPause);
+register("qm", "resume", qmResume);
+register("qm", "plan", qmPlan);
+register("qm", "policy", qmPolicy);
+register("qm", "reconcile", qmReconcile);
+register("qm", "tune", qmTune);
+register("qm", "test", qmTest);
 // === END Quartermaster commands ===
 
 // --- Dispatch ---

@@ -1,4 +1,9 @@
 {
+  "_upstreamRepo": "https://github.com/zeriontech/zerion-ai",
+  "_upstreamRef": "pull/5/head",
+  "_upstreamCommit": "c39fb6dcfc59a4c6d9a5bf78fea366a8d16e6099",
+  "_upstreamPinnedAt": "2026-05-06",
+  "_note": "Underscore-prefixed fields above are Quartermaster's fork pins. They identify the exact upstream commit this fork tracks. npm/pnpm ignore unknown top-level fields. Everything else in this file is upstream-verbatim per Phase 1 contract.",
   "name": "zerion",
   "version": "0.3.0",
   "description": "Zerion for AI agents and developers: hosted MCP docs, wallet-analysis skill, and a JSON-first CLI.",

@@ -151,3 +151,52 @@ Keep entries terse. The diff is in git; this file captures *intent and state*, n
 - **PRD §21.4 update is in-place, not a new section.** Spec = source of truth, drift = bad. The pivot becomes the new spec; the rationale lives in DEVIATIONS for archaeology.
 - **DEVIATIONS structure split into two top-level sections** per owner instruction so future readers can distinguish "we changed our minds based on new info" from "the world drifted away from our plan." Different protocols apply: pivots usually update the PRD; drift usually updates the code or reaffirms the spec.
 
+
+---
+
+## 2026-05-06 — Claude Code (Opus 4.7) — Phase 1: fork zerion-ai at PR #5 + Day 0 compressed
+
+**Phase:** 1 (Fork upstream CLI). Day 0 critical path also closed in this PR.
+**Started from:** `06f46fa` (post env-var pivot merge)
+**Ended at:** `<commit SHA after this branch merges>` on `main` via PR `phase-1/fork-zerion-ai-pr5`
+
+### Done
+
+**Gap analysis (precursor work):**
+- Read every dashboard page, fixture, component. Established that **only `/overview` is wired** against `state.json`; the other 9 routes are styled empty states. Fixtures `treasury.json` and `settings.json` exist but are orphans (no page imports them).
+- Mapped fixture-shape delta vs PRD §22.3 + §7. Daemon must emit a merged /api/state shape that joins SubordinateWallet config + latest BurnRateSample fields per wallet, plus server-derived `kpis` and `policyStats`.
+- Produced ordered gap list (11 endpoints, P0–P3) and compressed 7-phase plan with sequence diagram. Posted to owner.
+
+**Phase 1 scope:**
+- `git remote add zerion-ai https://github.com/zeriontech/zerion-ai.git` (kept locally; not pushed as repo remote).
+- `git fetch zerion-ai pull/5/head` → resolved to upstream commit `c39fb6dcfc59a4c6d9a5bf78fea366a8d16e6099` (zerion-ai PR #5 head as of 2026-05-06).
+- Cleared placeholder `cli/README.md` in a chore commit so subtree-merge could land cleanly.
+- `git subtree add --prefix=cli c39fb6dc...6099 --squash` — upstream tree at the pinned SHA is now under `/cli/`.
+- Pinned the SHA in `cli/package.json` via four underscore-prefixed top-level fields (`_upstreamRepo`, `_upstreamRef`, `_upstreamCommit`, `_upstreamPinnedAt`) plus an `_note` explaining the convention. npm/pnpm ignore unknown top-level fields, so this is a zero-runtime-impact addition.
+- Added `cli` to `pnpm-workspace.yaml` so the workspace picks up upstream as a member package.
+- `pnpm install` resolved upstream's deps (107 new packages: viem, @solana/web3.js, @x402/*, @open-wallet-standard/core, qrcode-terminal, native-binding deps for utf-8-validate/bufferutil). One harmless peer-dep warning (`utf-8-validate@^5.0.2` requested by `ws@7` deep under `@solana/web3.js → jayson`; we have `^6.0.6`. Not blocking.).
+- `pnpm --filter ./cli test` runs upstream's `node --test tests/*.test.mjs` unchanged: **190 tests, 176 pass, 0 fail, 14 skipped** (skips are network-gated integration tests that need Zerion API key / live wallet — expected).
+
+**Day 0 (compressed) snapshots:**
+- `docs-verified/zerion-api.md` ← `https://developers.zerion.io/llms.txt` (14708 bytes, 81 lines, sha256 `09676c10becb...1271aff3c`).
+- `docs-verified/x402.md` ← `coinbase/x402` README at upstream commit `dd927a26cfefc98c24b3ec38b3a8f204dad0c60d` committed 2026-04-21 (8544 bytes, 167 lines, sha256 `f424586f12c9...49fa70e9650122c`).
+- Both snapshots include metadata header per `docs-verified/README.md` schema (source URL, verified_at, content sha256, byte/line count for tamper detection).
+- `docs-verified/DEVIATIONS.md` updated under *Architectural Pivots* with the Day 0 compression entry — list of deferred items + recovery triggers.
+
+### Blocked / open
+- **x402 Sepolia facilitator smoke test** — owner runs this before Phase 4 starts. Result determines Phase 6 demo branch (Sepolia-default vs mainnet-small-USDC fallback). Both branches already in compressed phase plan.
+- **Principal wallet + agent token + test wallet funding** — owner does these as part of pre-Phase-4 demo prep. Not blocking until Phase 4.
+- **CI workflow update** — current `.github/workflows/ci.yml` runs `pnpm typecheck` + `pnpm build`. Now that `cli/` is in the workspace, CI should also run `pnpm --filter ./cli test`. Not done in this PR (out of scope for "fork + verify only"); recommended for a tiny follow-up PR.
+
+### Next
+- **Phase 2 (next session):** schemas + registries + fleet/treasury commands. PRD §31.3 scope: `packages/shared-schemas/` zod definitions (the missing source of truth for the merged /api/state shape), `cli/lib/{fleet,treasury}/`, new CLI commands. **This phase generates the daemon-side shapes that /api/state will emit** — feeds gap-list items 1–7. Tests per §25.
+- Owner: review + merge this PR. Then `git pull` locally so cli/ is on disk.
+- Owner: x402 Sepolia smoke before Phase 4 (no time pressure on Phase 2).
+
+### Decisions made (only the non-obvious ones)
+
+- **Pinned SHA via `_upstreamCommit` field in `cli/package.json` rather than only the subtree commit message.** Per owner instruction: "pin zerion-ai PR #5 head commit in cli/package.json". The underscore-prefixed convention means npm/pnpm ignore the field; it's a documentation pin readable by `cat cli/package.json | jq '._upstreamCommit'`. The subtree-merge commit message already records the SHA in git history, but a fresh agent reading the repo without git log shouldn't have to dig.
+- **Path-based filter `pnpm --filter ./cli test` instead of name-based.** Upstream package name is `zerion`, not `cli`. Path-based filter is more readable in CI / scripts (clear what directory is being tested) and survives any future upstream package renames.
+- **No new `cli/` README at QM scope.** Owner said "DO NOT touch upstream files." The placeholder I had at Phase 0 is gone; upstream's own README is now at `cli/README.md`. QM-specific fork notes live in `cli/package.json` underscore fields, `AGENT_PROGRESS.md` (this entry), and `docs-verified/DEVIATIONS.md`. When Phase 2 adds `cli/commands/qm/` etc., we'll add a sibling `cli/QM_README.md` (or similar non-conflicting filename) — not now.
+- **Bundled Day 0 snapshots into Phase 1 PR rather than two separate PRs.** Owner said "single PR titled 'phase 1: fork zerion-ai at PR #5 <sha>'" but also listed the doc snapshots in same message. Bundling keeps merge ceremony minimal; the PR title still reads as Phase 1 because the fork is the bulk of the change. DEVIATIONS captures the Day 0 compression separately.
+- **`/cli/cli/zerion.js` (nested cli) is correct, not weird.** Upstream has `cli/` as a subdirectory inside its own repo root. After subtree-merge `--prefix=cli`, upstream's root becomes `/cli/`, so upstream's `cli/zerion.js` becomes `/cli/cli/zerion.js`. The bin path `"./cli/zerion.js"` resolves correctly from `/cli/package.json`. Don't flatten; it would diverge from upstream and break clean re-pulls of new SHAs.

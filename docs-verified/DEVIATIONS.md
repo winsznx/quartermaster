@@ -23,6 +23,32 @@ Format per entry:
 
 ## Architectural Pivots
 
+### 2026-05-06 — Day 0 compressed for velocity
+
+**What deviated:** PRD §27 Day 0 Gate checklist (full set of pre-Phase-1 verifications).
+
+**From:** Complete Day 0 gate before Phase 1 begins. Full §27.1 boxes ticked: doc verification (Zerion CLI, Zerion API, x402, Vercel, Railway), infra liveness probes, principal wallet creation, agent token creation, Base Sepolia + mainnet wallet funding, x402 facilitator smoke test, cost estimate.
+
+**To:** Compressed to **critical-path only** so Phase 1 can start same-day:
+- ✅ zerion-ai PR #5 head commit pinned (`c39fb6dcfc59a4c6d9a5bf78fea366a8d16e6099`) — covered by Phase 1 fork
+- ✅ `developers.zerion.io/llms.txt` snapshotted to `docs-verified/zerion-api.md` (sha256 + bytes + lines recorded for tamper detection)
+- ✅ `github.com/coinbase/x402` README snapshotted at upstream commit `dd927a26cfefc98c24b3ec38b3a8f204dad0c60d` to `docs-verified/x402.md`
+
+**Deferred (recovered on first failure):**
+- Vercel + Railway doc snapshots — recover when first deploy hiccup surfaces
+- x402 facilitator Base Sepolia smoke test — owner runs this before Phase 4 starts (per session note). If it fails, demo pivots from Base Sepolia to small-USDC Base mainnet — Phase 6 sequencing already plans both branches.
+- Principal wallet creation, agent token creation, test wallet funding — owner does these as part of pre-Phase-4 demo prep
+- Full cost estimate — recover at Phase 4 once Railway daemon is real
+
+**Why:** Hackathon velocity. PRD §27 was designed for a clean-slate build; we already have monorepo, dashboard scaffold, FE work, and a deployed landing. Running the full Day 0 gate top-to-bottom would push Phase 1 by half a day for marginal information gain. Compressing to "snapshot the two upstream docs that matter for fork verification + spec drift detection" preserves the verification protocol where it pays the most rent.
+
+**Follow-up:**
+- Owner: x402 Sepolia facilitator smoke test before Phase 4. Result + branch decision logged here.
+- Owner: principal wallet + agent token + Base Sepolia funding before Phase 4 e2e. README "Self-host" section will need real env-var values then.
+- Snapshot Vercel docs / Railway docs only if a deploy issue forces us to verify what changed upstream.
+
+---
+
 ### 2026-05-05 — Public-demo pivot: Railway daemon + Vercel dashboard
 
 **What deviated:** PRD §21.4 (Deployment targets), implicit in PRD §17 (Landing) and §22 (Dashboard).

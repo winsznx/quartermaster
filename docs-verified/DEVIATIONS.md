@@ -23,6 +23,40 @@ Format per entry:
 
 ## Architectural Pivots
 
+### 2026-05-06 — Phase 4.5 e2e deferred: blocked on Base Sepolia funding
+
+**What deviated:** PRD §31.5 Phase 4 exit criterion: "Base Sepolia happy-path top-up confirmed via Basescan; tx hashes captured."
+
+**From:** Phase 4 expected to include one full e2e top-up cycle on Base Sepolia with real on-chain transactions, recorded in `AGENT_PROGRESS.md` for the README §26.4 curated tx-hash table.
+
+**To:** Phase 4 ships **all code + unit + integration tests fully green** (331 cli tests / 24 schemas tests, full happy-path + blocked-path through the daemon's tick loop with mocked I/O). The e2e against Base Sepolia is deferred to a separate "Phase 4.5" once the owner provides funded test wallets.
+
+**Why:** Per the deferred-e2e protocol owner specified at Phase 4 kickoff: "if owner hasn't funded principal + fleet + treasury on Base Sepolia at e2e step, write all code + unit + integration tests, all green, skip e2e step, mark explicitly as Phase 4.5 deferred." No funding signal received in this session.
+
+**What's needed to unblock Phase 4.5:**
+- **Principal wallet** on Base Sepolia (`eip155:84532`) holding USDC + ETH for gas. This is the QM operator wallet from which top-ups are sourced. Address + funded balance recorded in AGENT_PROGRESS.
+- **Treasury source(s)** — at minimum one. Simplest: idle USDC at the principal address (no Aave / stETH on Sepolia required for the demo). Address + USDC balance recorded.
+- **Subordinate fleet** — at least one wallet, preferably 3 for a richer demo. Each needs:
+  - A small initial USDC balance (say 5–20 USDC) so the watcher can observe burn.
+  - The wallet ID, address, and starting balance recorded.
+- **Zerion API key** (or x402 mode confirmed working on Sepolia — owner's pre-Phase-4 smoke test outcome).
+- **`zerion wallet create --agent`** run to mint the agent token that the executor uses for `npx zerion swap/bridge/send` subprocess calls.
+
+**Phase 4.5 procedure once funded:**
+1. `zerion fleet add <subordinate-id> <subordinate-address> --chain base-sepolia` for each subordinate.
+2. `zerion treasury add <source-id> <principal-address> USDC --chain base-sepolia --asset <usdc-contract-or-native>`.
+3. `zerion qm run` — daemon starts, ticks every 60s.
+4. Trigger a tick that fires a real top-up (either by waiting for natural burn or via `zerion qm test spike --wallet=<id> --rate=<low>` to nudge a wallet under threshold without tripping the burn-rate-oracle).
+5. Capture the resulting tx hash from `topup_send_confirmed` event in ledger.jsonl + on Basescan.
+6. Update `AGENT_PROGRESS.md` Phase 4.5 section with the tx hash, then mark Phase 4 as fully complete.
+
+**Follow-up:**
+- Next session opens with "go phase 4.5" + the funding info above.
+- Phase 5 (FE wire-up to live daemon) is **NOT** unblocked by Phase 4 code-complete alone — it needs Phase 4.5 e2e to confirm the daemon→dashboard contract works end-to-end against real Sepolia state.
+- If the owner's pre-Phase-4 x402-on-Sepolia smoke test fails, Phase 4.5 pivots to small-USDC Base mainnet per Phase 1 / Phase 6 sequencing notes.
+
+---
+
 ### 2026-05-06 — Phase 3 two-layer policy split
 
 **What deviated:** PRD §8.1 originally implied a single policy contract registered through upstream's `run-policies.mjs`. Phase 3 step-1 audit surfaced that upstream's existing policy contract is **fundamentally different** from what PRD §8 needs.

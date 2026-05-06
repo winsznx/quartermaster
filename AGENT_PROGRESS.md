@@ -364,3 +364,126 @@ When the README's architecture section gets written (Phase 6 / FE work), the pol
 > Quartermaster runs **two policy layers** for every top-up cycle. **Layer 1 (decider-time)** evaluates the proposed action against domain rules — is the target in the fleet, is the amount under cap, is the cooldown honored, does burn rate look real, is the source the lowest-yield one available — *before* any transaction is built. **Layer 2 (sign-time)** is the upstream Zerion CLI's existing OWS guard — it inspects the constructed transaction itself before signing, rejecting raw transfers and unscoped approvals. Both layers must pass for an action to confirm. Five composable policies in layer 1 are the meat of the policy framework; layer 2 is inherited from the fork. See `MASTER_PRD.md` §8.0 for the contract details.
 
 The "five composable policies" framing on the landing and in the demo applies to layer 1. Upstream's `deny-approvals` and `deny-transfers` are inherited safety nets we don't claim as ours; upstream's sign-time `allowlist` runs alongside our decider-time `allowlist` (same intent, two checkpoints).
+
+---
+
+## 2026-05-06 — Claude Code (Opus 4.7) — Phase 4 (code-complete; e2e deferred to Phase 4.5)
+
+**Phase:** 4 (Watcher + Decider + Executor + Reconcile + HTTP + Daemon + qm commands per PRD §31.5). All modules + tests + integration green; e2e on Base Sepolia deferred per owner's deferred-e2e protocol.
+**Started from:** `5ecceaf` (Phase 3 commit on `phase-1-7/integration`)
+**Ended at:** `<commit SHA after this commit>` (local only — push gate sealed)
+
+### Done
+
+**Dep verification + pins (commit 1):**
+- `docs-verified/hono.md` — Hono v4.12.17 README pinned, CORS+SSE behaviors documented for Phase 4 + Phase 6 future-widen.
+- `docs-verified/pino.md` — pino v10.3.1 pinned, v9→v10 surface diff is no-op for our usage.
+- DEVIATIONS *Doc-Verification Drift*: pino major bump from PRD §21.2 spec.
+- `cli/package.json`: `hono@4.12.17`, `@hono/node-server@2.0.1`, `pino@10.3.1`, `uuid@^10.0.0` (decider's actionId via `crypto.randomUUID()`, uuid is for non-test future use).
+
+**Module A — `cli/lib/qm/ledger.js` (commit 2):**
+- Append-only JSONL writer with atomic `fsync` per write.
+- Every event validated against `LedgerEvent` discriminated union before persistence.
+- Rotates at 50MB (PRD §13.1) — rename to `ledger-YYYY-MM-DD.jsonl`, gzip in detached subprocess.
+- `tail()` async iterator with corruption handler (skips bad lines, reports lineNum).
+- 10 tests including: schema-gate rejection of malformed events, mode 0o600 verification, corrupt-line handling, 50MB rotation with the trigger event landing in fresh file.
+
+**Module B — `cli/lib/qm/apy.js` (commit 2):**
+- Per-source APY cache at `apy-cache.json` with 1h TTL (PRD §13).
+- `refreshApy(sources, fetcher)` — only re-fetches stale entries, keeps stale value on fetch error (better stale than missing for yield-curve-preservation).
+- `applyApyToSources(sources)` — overlays cached APY onto a TreasurySource[] array, used by daemon hydration before policies see treasury data.
+- 13 tests covering hit/miss/stale/error paths.
+
+**Module C — `cli/lib/qm/watcher.js` (commit 3):**
+- `observeWallet(wallet, fetcher)` — fetch portfolio, compute recent-hour spend from prev-balance diff, step EWMA via Phase 3 helper, derive runway, append BurnRateSample to `samples.jsonl`.
+- `observeFleet(wallets, fetcher)` — fan out, capture per-wallet failures without short-circuiting.
+- `rollingSpend()` accumulates 24h/7d spend from balance diffs over the sample history.
+- Cold-start (no prior sample): runwayHours = 1e9 sentinel so `underThreshold` reads false.
+- 6 tests including the rolling-spend correctness check that surfaced and fixed a double-counting bug (rollingSpend already includes the trailing leg; observeWallet was adding `recent` again on top).
+
+**Module D — `cli/lib/qm/decider.js` (commit 3):**
+- `decide({ observations, treasurySources, recentSamples, lastConfirmedActionForTarget, policyConfig, now })` — picks neediest target (lowest runway under threshold), filters+sorts sources by `(apy ASC, priority ASC)`, computes top-up amount as `ewma * targetRunway - balance` capped to `maxPerActionUsdc`, builds `PolicyContext`, invokes Phase 3 dispatcher.
+- Returns one of `no_action | no_source | blocked | planned`.
+- 9 tests covering each return shape including the cooldown surface from policy dispatcher.
+
+**Module E — `cli/lib/qm/executor.js` (commit 4):**
+- `executeAction(plannedAction, plan, options)` — drives a planned action through swap → bridge → send legs by spawning `npx zerion ...` subprocesses.
+- `topup_planned` written to ledger BEFORE first tx (PRD §6.4 idempotency).
+- One `topup_*` event per state transition.
+- Optional swap/bridge legs flagged via `requiresSwap` / `requiresBridge`.
+- Subprocess timeouts: swap 90s / bridge 120s / send 60s.
+- 6 tests with mocked runner — happy path, swap+send path, subprocess error → `daemon_halt`, malformed planned action rejected at schema gate, `topup_planned` ordering verified.
+
+**Module F — `cli/lib/qm/reconcile.js` (commit 4):**
+- `findOrphans()` — walks the ledger, returns one entry per incomplete action with state + accumulated tx hashes.
+- `resolveOrphan(actionId, resolution)` — writes a `reconcile_resolved` ledger event. Caller verifies on-chain state first.
+- `resolutionHint(state)` — operator-friendly hint per state ("safe to mark failed" / "verify on-chain" / etc.).
+- NO automatic resume per PRD §6.4 — daemon refuses to tick until orphans are operator-resolved.
+- 9 tests covering each state-machine step.
+
+**Module G — `cli/lib/qm/http-server.js` (commit 5):**
+- Hono app factory `buildApp(state, options)` — every endpoint in PRD §22.3, every response shape parsed against the Phase 2 schemas before send.
+- `/api/state/stream` is SSE — initial state frame on connect, then broadcast frames on every tick via `broadcastState()`.
+- CORS allowlist defaults to `127.0.0.1:3001` + `localhost:3001` for the local dashboard. Phase 6 widens to Vercel origin once `NEXT_PUBLIC_DAEMON_URL` points at Railway.
+- 13 tests covering every route + 404s + CORS preflight, all using `app.fetch(Request)` directly (no port bind in tests).
+
+**Module H — `cli/lib/qm/daemon.js` (commit 5):**
+- `acquireLock()` / `releaseLock()` — `.lock` file at `~/.zerion/quartermaster/.lock` per PRD §10.2.
+- `hydrateState()` — loads fleet+treasury registries, fetches APY+balance, runs initial observation, replays ledger to rebuild action history + policy stats.
+- `runOneTick(state, options)` — the canonical tick: emits `tick_started`, observes fleet, decides, executes if planned, broadcasts to SSE subscribers, emits `tick_completed`. Idempotent.
+- Computes KPIs (totalFleetBalance, totalTreasuryBalance, actions24h) from in-memory state.
+- Computes per-policy pass/fail stats from ledger scan.
+
+**Module I — `cli/commands/qm/*` + `cli/cli/zerion.js` wiring (commit 6):**
+- 8 commands: `run, pause, resume, plan, policy, reconcile, tune, test`.
+- `qm run` — orchestrates lock → hydrate → reconcile-check → bind HTTP → tick loop → SIGINT/SIGTERM clean exit. Refuses to start if orphans are present.
+- `qm plan` — dry-run of `decide()` against current state, prints the would-be action.
+- `qm test spike --wallet=<id> --rate=<usdc-per-hour> [--balance=<usdc>]` — synthesizes a `BurnRateSample` for J1 demo (PRD §22.1 burn injection).
+- `qm reconcile [<id> --mark-failed]` — list orphans or resolve one.
+- `qm policy {get|set}` + `qm tune` (alias) — manage `policies.json` overrides.
+- `qm pause` / `qm resume` — flag-file toggles.
+- All 8 wired into the existing fenced QM block in `cli/cli/zerion.js` (extending the Phase 2 sanctioned upstream-touch — same fence boundaries).
+
+**Integration test (commit 6) — `cli/tests/qm-integration.test.mjs`:**
+- Test 1: full happy path. Pre-seeds a 24h steady-state sample baseline, registers fleet + treasury, runs one tick with mocked portfolio + tx runner. Asserts ledger sequence: `tick_started → wallet_observed → topup_planned → topup_send_pending → topup_send_confirmed → topup_confirmed → tick_completed`. Confirms `/api/state` and `/api/actions` reflect the executed action.
+- Test 2: blocked path. Pre-seeds a steady baseline, then drops balance hard so the EWMA spike trips burn-rate-oracle. Asserts `decide()` returns blocked with `BURN_RATE_ANOMALY_DETECTED` from `burn-rate-oracle`, ledger has `topup_planned + topup_blocked` but NO `topup_send_pending`.
+
+**Daemon end-to-end smoke (manual):**
+- `zerion fleet add demo-1 0x... --chain base` ✓ persists.
+- `zerion treasury add usdc-idle 0x... USDC --chain base --asset native` ✓ persists.
+- `zerion qm plan` ✓ returns `no_action` (no portfolio data → cold start).
+- `zerion qm run --tick-seconds=3600` ✓ daemon binds `127.0.0.1:7402`.
+- `curl http://127.0.0.1:7402/api/health` → 200, returns `{ status: "ok", daemonPid, startedAt, version }`.
+- `curl http://127.0.0.1:7402/api/state` → 200, returns 9 keys: `actions, daemonPid, fleet, kpis, policyStats, startedAt, status, treasury, version`.
+
+**Counts before / after Phase 4:**
+- cli upstream + QM tests: 261 / 247 pass / 14 skipped → after **331 / 317 pass / 14 skipped**. Upstream's 176 unchanged. +70 new Phase-4 tests (10 ledger + 13 apy + 6 watcher + 9 decider + 6 executor + 9 reconcile + 13 http-server + 2 integration + 2 from misc).
+- shared-schemas: **24 / 24** unchanged.
+- `pnpm typecheck` green across all 4 TS workspace projects.
+
+### Blocked / open
+- **e2e on Base Sepolia DEFERRED to Phase 4.5.** Owner has not provided funded test wallets in this session. Per the deferred-e2e protocol set at kickoff: code + unit + integration tests are all green; e2e is its own follow-up. Funding requirements + procedure documented in `docs-verified/DEVIATIONS.md` → *Architectural Pivots* → "Phase 4.5 e2e deferred: blocked on Base Sepolia funding" entry.
+- **`apy.js` fetcher implementation deferred** to Phase 4.1 follow-up. Module exposes the function signature `(source) => Promise<number>` so the Phase 4 daemon plumbs cleanly; the production fetcher will spawn `npx zerion analytics positions <wallet>` and parse the `apr` field. For the deferred-e2e period the fetcher can be a constant (e.g., `() => 0.05` for "5% APY") and the test suite is unaffected.
+- **`@x402/*` peer-dep warning** still surfaces. Non-blocking. Phase 6 might revisit if x402 calls fail at runtime.
+
+### Next
+- **Phase 4.5 (next session, after funding):** owner provides principal + fleet + treasury addresses with funded balances on Base Sepolia. Procedure documented in DEVIATIONS. Capture tx hashes for README §26.4.
+- **Phase 5 (after 4.5 unblocks):** FE wire-up. Replace `apps/dashboard/lib/fixtures/state.json` consumers with live fetch via `DAEMON_URL`. Delete orphan fixtures. Wire 9 empty-state routes. SSE for the 200ms pulse-on-update.
+
+### Decisions made (only the non-obvious ones)
+
+- **Subprocess for executor instead of in-process import.** Upstream's `cli/cli/commands/trading/{swap,bridge,send}.js` are designed to be run as standalone CLI commands. Importing them in-process would (a) require fragile knowledge of upstream internals that the subtree-merge story explicitly avoids, (b) tangle our error handling with theirs. `npx zerion ... --json` gives us the same surface a human gets and isolates crashes. Cost: subprocess startup time (~200ms per leg). Acceptable for the hackathon scale (top-ups every minutes, not seconds).
+- **`runOneTick` is the testable surface; `start()` is the production-only path.** The integration test exercises `runOneTick` directly without binding a port or running the SIGINT handler. The production `qm run` command wraps `runOneTick` with the lock + binding + signal-handler scaffolding, but those parts are difficult to unit-test reliably and have low return-on-test-effort. The smoke test above covers them empirically.
+- **HTTP layer parses every response against the schemas before send.** `c.json(StateResponse.parse(payload))` etc. Catches drift between daemon-side state shape and the contract the dashboard expects. Adds ~0.5ms per request — negligible. Surfaces bugs where the daemon accidentally emits a malformed shape.
+- **`topup_planned` written to ledger BEFORE first tx (re-emphasized).** PRD §6.4 mandates this for idempotency: if the daemon crashes mid-action, reconcile finds the orphan from the ledger record and the operator can verify chain state before resolving. Tested via the executor's "topup_planned written before first tx" test.
+- **Cooldown / burn-rate-oracle / yield-curve all read pre-loaded fields from `PolicyContext`** instead of doing fs/network reads. The daemon's tick loop pre-loads them: `lastConfirmedByWallet` from ledger replay, `recentSamples` from the watcher's output, `treasurySources` from the registry+APY-cache+balance-fetcher composition. Keeps policies pure (Phase 3 contract).
+- **No automatic retry of orphaned actions.** Per PRD §6.4 and the executor's daemon_halt → throw protocol. Operator runs `zerion qm reconcile` to surface, verifies chain state, marks resolved. The opposite (auto-retry) would risk double-spending if a tx submitted but the response was lost.
+- **CORS allowlist is hardcoded to dashboard local origins for Phase 4.** Phase 6 widens this to the Vercel dashboard's deployed origin. The `corsOrigins` option to `buildApp` makes the change a one-config-line update; the docs-verified/hono.md snapshot calls this out.
+- **Synthetic UUID for `topup_aborted_no_source`** — when the decider returns `no_source`, no real action ID exists yet (no plan to attach to). I generate a transient-looking UUID for the ledger event. Phase 4.5 may switch this to a sentinel value if the dashboard's actions list shows them confusingly.
+- **`paused` flag file instead of in-memory pause state.** A second `qm pause` invocation while the daemon is running needs to communicate with the running process. Either via signal (HUP-like) or a flag file the daemon polls each tick. Flag file is simpler and survives crashes (paused-on-crash stays paused on restart). The daemon's tick loop will check this flag in Phase 4.5 (currently scaffolded but not wired into the loop — TODO for Phase 4.5).
+
+### README architecture framing for Phase 6 (continued from Phase 3)
+
+The Phase 4 daemon implements the architecture diagram in `apps/landing/app/page.tsx`:
+
+> The Quartermaster daemon runs three pure components in a tick loop: a **Watcher** that reads each subordinate's USDC balance via the Zerion CLI and derives an EWMA-smoothed burn rate; a **Decider** that picks the neediest wallet, the lowest-yield eligible source, and a top-up amount within policy bounds; and an **Executor** that calls `npx zerion swap/bridge/send` as subprocesses and captures every tx hash. Every state change becomes one append to `ledger.jsonl`. A small Hono HTTP server on `127.0.0.1:7402` exposes the live state to the dashboard. On startup the daemon refuses to tick if any prior action is incomplete — operators run `zerion qm reconcile` to verify chain state and resolve orphans manually. No automatic retries.

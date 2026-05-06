@@ -2,9 +2,10 @@
  * Watcher — observes subordinate balances each tick, derives BurnRateSample
  * via the EWMA helper, persists to samples.jsonl, emits LedgerEvents.
  *
- * In production the `portfolioFetcher` arg spawns `npx zerion analytics
- * portfolio <address> --json` and parses the USDC balance from the result.
- * Tests inject a mock fetcher.
+ * In production the `portfolioFetcher` arg is `fetchPortfolio` from
+ * `cli/lib/qm/portfolio-fetcher.js`, which spawns `npx zerion positions
+ * <address>` and parses the USDC quantity. Tests pass a deterministic
+ * fetcher to avoid spawning subprocesses.
  *
  * The watcher does NOT decide anything — it just emits the latest sample for
  * every fleet wallet plus an indication of whether each wallet's runway is

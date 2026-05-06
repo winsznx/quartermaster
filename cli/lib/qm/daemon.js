@@ -28,6 +28,7 @@ import { applyApyToSources } from "./apy.js";
 import { decide } from "./decider.js";
 import { executeAction } from "./executor.js";
 import { appendEvent, tail } from "./ledger.js";
+import { fetchPortfolio, fetchSourceBalance } from "./portfolio-fetcher.js";
 import { findOrphans } from "./reconcile.js";
 import { REGISTERED_POLICIES } from "./run-policies.js";
 import { qmPath } from "./storage.js";
@@ -121,16 +122,17 @@ async function computePolicyStats() {
 /**
  * Hydrate daemon state from disk + ledger.
  *
- * `options.now` is injectable for tests.
- * `options.portfolioFetcher` and `options.txRunner` mock out external IO.
- * `options.balanceFetcher` returns current on-chain balance per source.
+ * `options.now` is injectable for tests. Production reads real chain state
+ * via `portfolio-fetcher` (default for both `portfolioFetcher` and
+ * `balanceFetcher`); test code passes its own fetchers via `options.*` to
+ * avoid spawning subprocesses.
  */
 export async function hydrateState(options = {}) {
   const now = options.now ?? new Date();
   const wallets = listWallets();
   const sources = applyApyToSources(listSources(), now);
 
-  const balanceFetcher = options.balanceFetcher ?? (async (s) => s.balance ?? 0);
+  const balanceFetcher = options.balanceFetcher ?? fetchSourceBalance;
   const sourcesWithBalance = await Promise.all(
     sources.map(async (s) => ({
       ...s,
@@ -138,7 +140,7 @@ export async function hydrateState(options = {}) {
     })),
   );
 
-  const portfolioFetcher = options.portfolioFetcher ?? (async () => ({ usdcBalance: 0 }));
+  const portfolioFetcher = options.portfolioFetcher ?? fetchPortfolio;
   const observations = await observeFleet(wallets, portfolioFetcher, { now });
 
   const fleet = observations
@@ -234,9 +236,10 @@ export async function runOneTick(state, options = {}) {
   }
 
   // Build observations on the FLY so freshly-burned balances are seen, not
-  // the stale snapshot from hydrate.
+  // the stale snapshot from hydrate. Default to the real `fetchPortfolio`
+  // production fetcher; tests inject their own.
   const wallets = listWallets();
-  const portfolioFetcher = options.portfolioFetcher ?? (async () => ({ usdcBalance: 0 }));
+  const portfolioFetcher = options.portfolioFetcher ?? fetchPortfolio;
   const observations = await observeFleet(wallets, portfolioFetcher, {
     now: options.now ?? new Date(),
   });

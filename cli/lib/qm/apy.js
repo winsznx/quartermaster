@@ -7,8 +7,9 @@
  *
  * Phase 4 implementation: stores `currentApyEstimate` per-source-id with
  * `apyLastUpdated`. The watcher refreshes by calling `refreshApy(sources, fetcher)`
- * once per hour. The fetcher is a function `(source) => Promise<number>` so the
- * tests can mock it without spawning subprocesses.
+ * once per hour. The fetcher is a function `(source) => Promise<number>`.
+ * Production wires `fetchApy` from `apy-fetcher.js` (spawns upstream); tests
+ * inject a deterministic fetcher to avoid subprocess overhead.
  *
  * In production the fetcher will spawn `zerion analytics positions <wallet>` and
  * extract the source's APY from `apr` field on the matching position. That

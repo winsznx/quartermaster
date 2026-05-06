@@ -8,8 +8,9 @@
  * as a child process gives us the same surface a human gets, isolates
  * crashes, and never imports upstream code (Phase 1 contract).
  *
- * The runner accepts a `spawn` injectable for tests so we can fake stdout
- * without actually running zerion.
+ * The runner accepts a `spawnImpl` injectable so tests can drive the state
+ * machine deterministically without spawning real subprocesses. Production
+ * uses the default `node:child_process.spawn`.
  */
 
 import { spawn as nativeSpawn } from "node:child_process";
@@ -31,8 +32,9 @@ const DEFAULT_TIMEOUT_MS = {
  * - Success: process exits 0, stdout is JSON.
  * - Failure: process exits 1, stdout is `{ "error": { code, message, ... } }`.
  *
- * For tests, `spawnImpl` can be replaced with a fake that returns a stub
- * EventEmitter. The default uses node:child_process.spawn.
+ * Tests replace `spawnImpl` with a stub that returns a controlled
+ * EventEmitter so the state machine can be exercised deterministically.
+ * The default uses node:child_process.spawn — production path.
  */
 function runZerion(args, { timeoutMs, spawnImpl = nativeSpawn } = {}) {
   return new Promise((resolve, reject) => {
@@ -111,7 +113,8 @@ function pickTxHash(parsed, key) {
  *
  * On error: emits `daemon_halt` or `topup_aborted_no_source` and rethrows.
  *
- * `options.runner` overrides the subprocess invoker (tests use a fake).
+ * `options.runner` overrides the subprocess invoker (tests pass a stub
+ * that returns scripted responses).
  * `options.requiresBridge` controls whether the bridge leg runs (selectedSource
  * on a different chain than target wallet).
  */

@@ -1,69 +1,158 @@
 /**
- * `zerion qm test spike --wallet=<id> --rate=<usdc-per-hour>` — demo-time
- * burn-rate injection per PRD §22.1. Synthesizes a BurnRateSample with the
- * specified ewmaHourlyBurn and a low usdcBalance so the next tick will pick
- * the wallet as needy.
+ * `zerion qm test spike --wallet=<id> --rate=<usdc-per-hour>
+ *                       [--duration=<seconds>] --to=<address>`
  *
- * Used for the J1 demo moment: inject a 10x baseline spike, watch burn-rate-
- * oracle reject the resulting top-up plan with `BURN_RATE_ANOMALY_DETECTED`.
+ * Drains the subordinate wallet at the specified rate via REAL Sepolia USDC
+ * transfers from the subordinate wallet's keystore. The watcher reads the
+ * resulting balance drops via `npx zerion positions`, derives the EWMA, and
+ * the layer-1 burn-rate-oracle policy refuses to top it back up because the
+ * spike exceeds 10× the 7-day baseline.
  *
- * NOT an upstream command. Phase 4 deliverable per PRD §31.5.
+ * No injected samples. No fake balances. The subordinate wallet must already
+ * be in upstream's keystore under the same name as its fleet id (operator
+ * runs `zerion wallet import --name <id> --evm-key` per subordinate during
+ * demo setup).
+ *
+ * Each iteration spawns `npx zerion send <to> USDC <amount> --wallet=<id>`
+ * — a real on-chain Sepolia transaction. Tx hashes stream to stdout as
+ * each send confirms. Operator can Ctrl-C any time; partial drains are
+ * safe (real chain state is the source of truth).
+ *
+ * NOT an upstream command. PRD §22.1 / §31.5.
  */
 
-import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
-
-import { BurnRateSample } from "@quartermaster/shared-schemas";
+import { spawn } from "node:child_process";
 
 import { print, printError } from "../../cli/lib/util/output.js";
 
 import { getWallet } from "../../lib/fleet/registry.js";
-import { qmPath } from "../../lib/qm/storage.js";
+
+const SEND_INTERVAL_MS = 10_000; // every 10s
+const SEND_TIMEOUT_MS = 60_000;
+const DEFAULT_DURATION_SEC = 300;
+
+function runZerionSend({ walletId, to, amount }) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "npx",
+      ["zerion", "send", to, "USDC", String(amount), "--wallet", walletId],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(
+        Object.assign(new Error(`zerion send: timeout after ${SEND_TIMEOUT_MS}ms`), {
+          code: "subprocess_timeout",
+        }),
+      );
+    }, SEND_TIMEOUT_MS);
+    child.stdout?.on("data", (b) => (stdout += b.toString()));
+    child.stderr?.on("data", (b) => (stderr += b.toString()));
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on("close", (exitCode) => {
+      clearTimeout(timer);
+      if (exitCode !== 0) {
+        return reject(
+          Object.assign(new Error(`zerion send: exit ${exitCode}; stderr=${stderr.slice(0, 200)}`), {
+            code: "subprocess_exit",
+          }),
+        );
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch (err) {
+        reject(
+          Object.assign(new Error(`zerion send: non-JSON stdout (${err.message})`), {
+            code: "subprocess_parse",
+          }),
+        );
+      }
+    });
+  });
+}
+
+function pickTxHash(parsed) {
+  if (!parsed || typeof parsed !== "object") return null;
+  return (
+    parsed.txHash ??
+    parsed.transactionHash ??
+    parsed.tx?.hash ??
+    parsed.transaction?.hash ??
+    null
+  );
+}
 
 export default async function qmTest(args, flags) {
   const [subcommand] = args;
 
   if (subcommand !== "spike") {
-    printError("unknown_subcommand", `unknown qm test subcommand "${subcommand}". Available: spike`);
+    printError(
+      "unknown_subcommand",
+      `unknown qm test subcommand "${subcommand}". Available: spike`,
+    );
     process.exit(1);
   }
 
   const walletId = flags.wallet;
   const rate = Number(flags.rate);
-  const balance = Number(flags.balance ?? 5);
+  const duration = Number(flags.duration ?? DEFAULT_DURATION_SEC);
+  const to = flags.to;
 
-  if (!walletId || Number.isNaN(rate)) {
-    printError("missing_args", "Usage: zerion qm test spike --wallet=<id> --rate=<usdc-per-hour> [--balance=<usdc>]");
+  if (!walletId || Number.isNaN(rate) || rate <= 0 || !to) {
+    printError(
+      "missing_args",
+      "Usage: zerion qm test spike --wallet=<id> --rate=<usdc-per-hour> --to=<address> [--duration=<seconds>]",
+    );
     process.exit(1);
   }
 
-  try {
-    const wallet = getWallet(walletId);
-    if (!wallet) {
-      printError("not_found", `wallet "${walletId}" not in fleet`);
-      process.exit(1);
-    }
+  const wallet = getWallet(walletId);
+  if (!wallet) {
+    printError("not_found", `wallet "${walletId}" not in fleet — register with "zerion fleet add" first`);
+    process.exit(1);
+  }
 
-    const now = new Date().toISOString();
-    const sample = BurnRateSample.parse({
+  // Per-iteration USDC: rate (USDC/h) × intervalMs / 3600000.
+  const sendAmount = (rate * SEND_INTERVAL_MS) / 3_600_000;
+  const numSends = Math.max(1, Math.floor((duration * 1000) / SEND_INTERVAL_MS));
+
+  print({
+    spike: {
       walletId,
-      usdcBalance: balance,
-      sampledAt: now,
-      // Make the spike look like sustained burn (24h at this rate) so it passes
-      // sustained-need check, but baseline is tiny so spike-vs-baseline trips.
-      last24hSpend: rate * 24,
-      last7dSpend: 0.5 * 24 * 7, // 0.5 USDC/h baseline → spike ratio = rate/0.5
-      ewmaHourlyBurn: rate,
-      runwayHours: rate > 0 ? balance / rate : 1e9,
-    });
+      to,
+      ratePerHour: rate,
+      durationSec: duration,
+      sendIntervalSec: SEND_INTERVAL_MS / 1000,
+      sendAmountUsdc: sendAmount,
+      plannedSends: numSends,
+    },
+  });
 
-    const path = qmPath("samples.jsonl");
-    mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, `${JSON.stringify(sample)}\n`, { mode: 0o600 });
-
-    print({ injected: true, sample });
-  } catch (err) {
-    printError(err.code || "spike_failed", err.message);
-    process.exit(1);
+  const sent = [];
+  for (let i = 0; i < numSends; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, SEND_INTERVAL_MS));
+    try {
+      const response = await runZerionSend({ walletId, to, amount: sendAmount });
+      const txHash = pickTxHash(response);
+      sent.push({ i: i + 1, txHash, amountUsdc: sendAmount });
+      print({ burnTx: i + 1, txHash, amountUsdc: sendAmount });
+    } catch (err) {
+      // Don't bail on one failure — testnet RPC blips happen. Log and keep going.
+      printError(err.code || "send_failed", `iteration ${i + 1}: ${err.message}`);
+    }
   }
+
+  print({
+    spikeComplete: true,
+    walletId,
+    sendsAttempted: numSends,
+    sendsConfirmed: sent.filter((s) => s.txHash).length,
+    totalUsdcDrained: sent.reduce((sum, s) => (s.txHash ? sum + s.amountUsdc : sum), 0),
+    txHashes: sent.filter((s) => s.txHash).map((s) => s.txHash),
+  });
 }

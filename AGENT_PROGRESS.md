@@ -269,3 +269,98 @@ Keep entries terse. The diff is in git; this file captures *intent and state*, n
 - **CLI command files at `cli/commands/{fleet,treasury}/`, NOT `cli/cli/commands/{fleet,treasury}/`.** The latter would put us inside upstream's command tree; the former is a peer directory at QM scope. The fenced block in `cli/cli/zerion.js` imports `../commands/fleet/add.js` (one `..` up to `/cli/`, then into `/cli/commands/...`). Keeps the QM/upstream split visible.
 - **Did NOT add a `zerion qm` namespace yet.** Phase 4 introduces `zerion qm run/pause/resume/...` per PRD §31.5. We could have created the `qm` namespace empty in Phase 2, but YAGNI — adding it Phase 4 is two extra `register(...)` calls. The current fenced block is the smallest possible upstream-touch for the Phase 2 deliverable.
 - **No `--pretty` formatter for our commands.** Upstream commands ship `formatWalletList`-style pretty formatters. Ours emit JSON only. Reason: the registry surface is operator-facing for `zerion qm run` configuration, not human-glance — the daemon and dashboard are the two real consumers. If FE wants a pretty view at Phase 5, we add it then.
+
+---
+
+## 2026-05-06 — Claude Code (Opus 4.7) — Phase 3: policies (two-layer split)
+
+**Phase:** 3 (PRD §31.4 + §8). Step-1 audit surfaced fundamental contract divergence with upstream; resolved by adopting a two-layer policy architecture (Option A, confirmed by owner).
+**Started from:** `706eb7f` (Phase 2 commit on `phase-1-7/integration`)
+**Ended at:** `<commit SHA after this commit>` (local only — push gate sealed)
+
+### Architecture decision logged
+
+PRD §8.1 expected a single policy contract `evaluate(ctx) → { ok, reasonCode?, reasonText? }` with rich domain-typed context. Upstream's `cli/cli/policies/*.mjs` ship a different contract: `check(tx-shaped-ctx) → { allow, reason? }`, sync, sign-time. Two of our five policies (`yield-curve-preservation`, `burn-rate-oracle`) literally cannot work at sign time — they reason about choices that don't exist yet as transactions.
+
+Owner confirmed Option A: **two-layer policy architecture.** Both layers run for every action; both must pass; failure at either halts the cycle and writes the failing policy's reason.
+
+| Layer | Where | Dispatcher | Triggered when | Sees | Result |
+|---|---|---|---|---|---|
+| 1 — decider | `cli/policies/*.mjs` | `cli/lib/qm/run-policies.js` | Before any tx is constructed | Domain types | `{ ok, reasonCode?, reasonText? }` |
+| 2 — sign | `cli/cli/policies/*.mjs` | upstream `run-policies.mjs` | When OWS signs | Raw EVM tx fields | `{ allow, reason? }` |
+
+PRD §8 updated inline with new §8.0 (two-layer architecture spec), Layer column added to §8.2 table, §8.7 expanded with cross-layer composition rules. DEVIATIONS gets the comparison table under *Architectural Pivots*.
+
+### Done
+
+**PRD/spec updates:**
+- `MASTER_PRD.md` §8.0 (new), §8.2 (Layer column + 5-then-3 split), §8.7 (cross-layer composition rules).
+- `docs-verified/DEVIATIONS.md` *Architectural Pivots* entry "Phase 3 two-layer policy split" with the contract comparison table + reasoning.
+
+**Schemas (`packages/shared-schemas/src/`):**
+- `policy.ts` — `PolicyContext` (strict zod schema), `PolicyResult` (discriminated union over `ok`), `REASON_CODES` const-as-enum (LOCKED — every reject reason in PRD §8 is a member, plus `MALFORMED_CONTEXT`), `passResult()` / `rejectResult()` constructors.
+- `api.ts` — added `TreasurySourceWithBalance = TreasurySource.extend({ balance: nonneg })`. Required because PRD §8.4 line 1 needs `balance` to filter eligible sources, but `TreasurySource` is the persisted (config-only) shape per PRD §7. Same join pattern as `WalletWithDerived`. `StateResponse.treasury` and `TreasuryResponse` now use the with-balance shape; `PolicyContext.selectedSource` and `allEligibleSources` too.
+- Re-export from `index.ts`.
+
+**Layer-1 policies (`cli/policies/*.mjs`):**
+- `allowlist.mjs` (decider-time): rejects `NOT_IN_FLEET` if `proposedAction.targetWalletId` is not in `policyConfig.allowedTargetIds` (orchestrator preloads from fleet registry).
+- `max-per-action-cap.mjs`: rejects `CAP_EXCEEDED` if `topUpAmountUsdc > policyConfig.maxPerActionUsdc` (default 100).
+- `cooldown-window.mjs`: rejects `COOLDOWN_VIOLATION` if `now - lastConfirmedActionForTarget.confirmedAt < policyConfig.minCooldownMinutes` (default 30). Reads `lastConfirmedActionForTarget` from context — orchestrator preloads, policy never touches fs.
+- `burn-rate-oracle.mjs`: three checks per PRD §8.3 — sustained-need (`NO_SUSTAINED_BURN`), spike-vs-baseline (`BURN_RATE_ANOMALY_DETECTED`), runway-validity (`RUNWAY_NOT_BELOW_THRESHOLD`). All from latest BurnRateSample's precomputed fields (`last24hSpend`, `last7dSpend`, `ewmaHourlyBurn`, `usdcBalance`).
+- `yield-curve-preservation.mjs`: filters `allEligibleSources` to those with `balance >= topUpAmount + minRetainedBalance`, sorts by `(currentApyEstimate ASC, priority ASC)`, asserts `selectedSource.id === sorted[0].id`. Otherwise `YIELD_CURVE_VIOLATION`.
+
+All five are pure: `PolicyContext.safeParse` defensively at the top, no fs/network/clock — `context.now` is the only time source. Each exports `policyName`, `policyVersion`, `evaluate`.
+
+**EWMA helper (`cli/lib/qm/ewma.js`):**
+- `ewmaStep(previous, recent, alpha=0.30)` — single recurrence step.
+- `ewmaSeries(spendsPerHour, alpha=0.30)` — runs the recurrence over an array; returns `{ final, trace }`. Used by tests and by the watcher (Phase 4) for cold-start initialization.
+- `meanHourlyBurn(spendsPerHour)` — mean over an array, used by burn-rate-oracle's sustained-need check.
+
+**QM dispatcher (`cli/lib/qm/run-policies.js`):**
+- Locked registry order: allowlist → max-per-action-cap → cooldown-window → burn-rate-oracle → yield-curve-preservation.
+- ALL-must-pass; first failure short-circuits.
+- `configForPolicy()` namespaces policyConfig: top-level scalars/arrays pass through to every policy; nested objects only reach the policy whose name matches the key. Lets the orchestrator pass `{ allowedTargetIds: […], "max-per-action-cap": { maxPerActionUsdc: 50 } }` and have each policy see only what it needs.
+- Returns `{ ok, evaluations[] }` on success, or `{ ok: false, reasonCode, reasonText, failedPolicy, evaluations[] }`. `evaluations[]` mirrors PRD §7 PolicyCheck shape so the daemon can attach it directly to `TopUpAction.policyChecks`.
+- Optional `onEvaluation` hook for streaming each PolicyCheck to a ledger writer in real time (Phase 4 use).
+- `REGISTERED_POLICIES` exported for the regression-guard test.
+
+**Upstream untouched:** `cli/cli/policies/run-policies.mjs`, `cli/cli/policies/allowlist.mjs`, `cli/cli/policies/deny-approvals.mjs`, `cli/cli/policies/deny-transfers.mjs` are byte-identical to the upstream snapshot. Layer 2 keeps its `check(ctx) → { allow, reason? }` contract unchanged.
+
+**Tests (`cli/tests/qm-policies.test.mjs`, `cli/tests/qm-ewma.test.mjs`):**
+- EWMA: 12 tests (ewmaStep × 5, ewmaSeries × 5 incl. closed-form numeric assertions on convergence, spike, ramp, alpha=1; meanHourlyBurn × 2).
+- Per-policy: every layer-1 policy has the 5 mandatory PRD §25.2 patterns (known-good, boundary, just-over, extreme, malformed) → 25 tests baseline.
+- Plus per-policy specifics: `max-per-action-cap` custom-cap test (+1), `cooldown-window` custom-cooldown test (+1), `burn-rate-oracle` three-checks-in-detail block with check-3 isolation, sustained-spike scenario, real-ramp scenario, custom spike_threshold (+4), `yield-curve-preservation` filter-by-balance test (+1).
+- Composition: `runPolicies` happy path (5 pass), short-circuit at position 2 (max-cap fails), policyConfig namespacing reaches the right policy, `onEvaluation` hook fires for every step, evaluations match PolicyCheck shape (+5).
+- Two-layer regression guard: layer-1 has exactly 5 in our dispatcher; layer-2's 3 upstream files importable, each exports `check()`; layers do NOT share contracts (sync `check` vs async `evaluate`, `{allow}` vs `{ok}`) — catches the regression where someone moves a file across layers (+3).
+
+**Counts before / after Phase 3:**
+- cli upstream + QM tests: 208 / 194 pass / 14 skipped → after **261 / 247 pass / 14 skipped**. Upstream's 176 pass count unchanged. +53 new layer-1 tests.
+- shared-schemas: 24 / 24 → still **24 / 24** (one schema test fixture updated for `TreasurySourceWithBalance`, count same).
+- `pnpm typecheck` green across all 4 TS workspace projects.
+
+### Blocked / open
+- (nothing for Phase 4 to clear — the contract surface, dispatcher, registries, schemas, and test patterns are all in place)
+
+### Next
+- **Phase 4:** daemon. Watcher + decider + executor + ledger + Hono HTTP server emitting full PRD §22.3 surface. Layer-1 policies invoked via `runPolicies()` in the decider's planning step; policy results streamed to ledger via `onEvaluation` hook. Live e2e top-up on Base Sepolia (or mainnet if x402 sepolia smoke fails — branch in PRD §31.5 and AGENT_PROGRESS Phase 1 plan).
+- **Owner:** x402 Sepolia facilitator smoke before Phase 4 e2e.
+
+### Decisions made (only the non-obvious ones)
+
+- **Two-layer policy architecture (Option A) over Options B/C/D.** Two of five layer-1 policies cannot work at sign time. Options B (bridge ctx) and D (multi-contract dispatcher) would have forced layer mixing. Option C (adapt PRD to upstream) would have gutted PRD §8.3/§8.4. A keeps each layer honest: upstream guards *signatures*, we guard *decisions*. Phase 4 daemon invokes both layers per top-up cycle.
+- **`TreasurySourceWithBalance` extends `TreasurySource` rather than overloading the persisted schema.** Same pattern as `WalletWithDerived`. Persisted shape stays config-only (matches PRD §7); runtime/API/policy shape gets the join with on-chain balance. Avoids forcing daemon code to write live balance into `treasury.json`.
+- **`REASON_CODES` as a const-object exported alongside the zod enum.** Downstream code (executor, ledger writer, dashboard) imports `REASON_CODES.BURN_RATE_ANOMALY_DETECTED` rather than referencing the string literal. The schema is `z.enum(Object.values(REASON_CODES))` — single source of truth.
+- **Policies use `*` namespace import in dispatcher and tests.** Each `cli/policies/*.mjs` exports three named bindings (`policyName`, `policyVersion`, `evaluate`); a default export would have meant either `export default { policyName, policyVersion, evaluate }` (boilerplate) or losing the named exports for downstream tooling. `import * as policy from "..."` keeps the named exports and gives the dispatcher one binding to register.
+- **Dispatcher's `configForPolicy` namespacing.** Top-level scalars/arrays pass through to every policy (so `allowedTargetIds` reaches `allowlist`); nested objects only reach the policy whose key matches their name. Lets the orchestrator stuff the whole policies.json into one root config and have each policy see only its slice. Tested via the namespacing composition test.
+- **`burn-rate-oracle` reads precomputed fields from the latest BurnRateSample rather than re-running EWMA.** The watcher (Phase 4) does the EWMA stepping when adding samples; the policy trusts `latest.ewmaHourlyBurn`, `latest.last24hSpend`, `latest.last7dSpend`. Keeps the policy pure (no math state) and matches the PRD §9.3 architecture where the watcher persists running EWMA per wallet. The EWMA helper is exported for the watcher's use, not the policy's.
+- **Defensive `safeParse(ctx)` at the top of every policy** rather than trusting the dispatcher's input. Returns `MALFORMED_CONTEXT` on any schema mismatch. Catches orchestrator bugs at policy boundary; the cost is one schema parse per policy per evaluation (negligible — sub-millisecond).
+- **Layer-2 regression guard test imports upstream policy files directly** to assert their `check()` exports are still present. Catches the regression where someone refactors and accidentally moves an upstream policy file or removes the `check` export. The test makes the two-layer split explicit and discoverable.
+- **Did NOT change upstream `run-policies.mjs`.** PRD §8.0 + DEVIATIONS make clear this is intentional — sign-time and decider-time are different layers, with their own dispatchers. The Phase 2 sanctioned upstream-touch in `cli/cli/zerion.js` (the fenced QM block) does NOT extend here.
+
+### README architecture framing (pre-baked for Phase 6 / FE writer)
+
+When the README's architecture section gets written (Phase 6 / FE work), the policy paragraph should say roughly:
+
+> Quartermaster runs **two policy layers** for every top-up cycle. **Layer 1 (decider-time)** evaluates the proposed action against domain rules — is the target in the fleet, is the amount under cap, is the cooldown honored, does burn rate look real, is the source the lowest-yield one available — *before* any transaction is built. **Layer 2 (sign-time)** is the upstream Zerion CLI's existing OWS guard — it inspects the constructed transaction itself before signing, rejecting raw transfers and unscoped approvals. Both layers must pass for an action to confirm. Five composable policies in layer 1 are the meat of the policy framework; layer 2 is inherited from the fork. See `MASTER_PRD.md` §8.0 for the contract details.
+
+The "five composable policies" framing on the landing and in the demo applies to layer 1. Upstream's `deny-approvals` and `deny-transfers` are inherited safety nets we don't claim as ours; upstream's sign-time `allowlist` runs alongside our decider-time `allowlist` (same intent, two checkpoints).

@@ -271,7 +271,7 @@ describe("API response shapes", () => {
           ewmaHourlyBurn: 0.18,
         },
       ],
-      treasury: [exampleSource],
+      treasury: [{ ...exampleSource, balance: 450.0 }],
       actions: [exampleAction],
       kpis: {
         totalFleetBalance: 12.5,

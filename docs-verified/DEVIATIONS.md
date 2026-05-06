@@ -23,6 +23,41 @@ Format per entry:
 
 ## Architectural Pivots
 
+### 2026-05-06 — Phase 3 two-layer policy split
+
+**What deviated:** PRD §8.1 originally implied a single policy contract registered through upstream's `run-policies.mjs`. Phase 3 step-1 audit surfaced that upstream's existing policy contract is **fundamentally different** from what PRD §8 needs.
+
+**The divergence:**
+
+| Aspect | Upstream `cli/cli/policies/*.mjs` (`check`) | PRD §8.1 (`evaluate`) |
+|---|---|---|
+| Layer | sign-time guard (tx-level) | decider-time guard (action-level) |
+| Function name | `check(ctx)` sync | `evaluate(ctx)` async |
+| Result shape | `{ allow, reason? }` | `{ ok, reasonCode?, reasonText? }` |
+| Context shape | `{ transaction: { to, data, value }, policy_config }` | `{ proposedAction, targetWallet, selectedSource, allEligibleSources, recentSamples, lastConfirmedActionForTarget, policyConfig, now }` |
+| Triggering | OWS engine per `signTransaction` | daemon decider per planned `TopUpAction` |
+| Module exports | `check` | `policyName`, `policyVersion`, `evaluate` |
+
+**From:** Single policy system; QM policies registered into upstream's `run-policies.mjs`.
+
+**To:** Two policy layers, each with its own dispatcher. Neither contract is wrong; they guard different concerns:
+
+- **Layer 1 (ours, decider-time)** — `cli/policies/*.mjs` dispatched by `cli/lib/qm/run-policies.js`. Sees domain types. `evaluate(ctx) → { ok, reasonCode?, reasonText? }`.
+- **Layer 2 (upstream, sign-time)** — `cli/cli/policies/*.mjs` dispatched by upstream's `run-policies.mjs`. Sees raw EVM tx fields. `check(ctx) → { allow, reason? }`.
+
+Both layers run for every action. Failure at either halts the cycle.
+
+**Why:** Two of our five policies (`yield-curve-preservation`, `burn-rate-oracle`) literally cannot work at sign time — they reason about choices that don't exist yet as transactions. Forcing them into upstream's tx-shaped contract would have required either (a) gutting PRD §8.3 and §8.4 or (b) bridging domain types as side fields on a tx-shaped ctx. Both paths were rejected. The two-layer split keeps each contract honest: upstream guards *signatures*, we guard *decisions*.
+
+PRD §8 updated inline with new §8.0 "Two-layer policy architecture" and a `Layer` column on §8.2.
+
+**Follow-up:**
+- README architecture section (Phase 6 / FE work) gets one paragraph on the two layers. Framing pre-baked in `AGENT_PROGRESS.md` Phase 3 entry for the next writer.
+- Composition test verifies BOTH layers stay registered (catches the regression where someone moves a file between layers).
+- If upstream ever upstreams a domain-aware policy contract, revisit this split.
+
+---
+
 ### 2026-05-06 — Phase 2 sanctioned upstream-touch in cli/cli/zerion.js + cli/package.json
 
 **What deviated:** Phase 1 contract said "DO NOT touch upstream files." Phase 2 needed to wire new commands so `zerion fleet add ...` works (PRD §31.3 daily artifact).

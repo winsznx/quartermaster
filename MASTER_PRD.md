@@ -531,9 +531,24 @@ type LedgerEvent =
 
 This is the 25% of the score that separates us from every other entrant. Most ship one policy. We ship a composable system.
 
-### 8.1 Policy contract
+### 8.0 Two-layer policy architecture *[LOCKED — added 2026-05-06]*
 
-Every policy is a single file under `cli/policies/`. Exports:
+Quartermaster runs **two policy layers** for every top-up cycle. They guard different concerns and use different contracts; both must pass for an action to complete.
+
+| Layer | Where | Dispatcher | Evaluated when | Sees | Result shape |
+|---|---|---|---|---|---|
+| 1 — decider-time (ours) | `cli/policies/*.mjs` | `cli/lib/qm/run-policies.js` | BEFORE any tx is constructed | Domain types: `proposedAction`, `targetWallet`, `selectedSource`, `allEligibleSources`, `recentSamples`, `lastConfirmedActionForTarget`, `policyConfig`, `now` | `{ ok, reasonCode?, reasonText? }` |
+| 2 — sign-time (upstream) | `cli/cli/policies/*.mjs` | upstream `run-policies.mjs` | When OWS signs the tx | Raw EVM tx fields: `to`, `data`, `value`, selectors | `{ allow, reason? }` |
+
+**Layer 1 blocks bad decisions. Layer 2 blocks bad signatures.** Failure at either layer halts the cycle and writes to the ledger with the failing policy's reason and layer tag.
+
+The "five composable policies" framing of §3.4 / §8.1 / landing copy refers to **layer 1** — our five. Upstream's `deny-approvals` and `deny-transfers` are inherited safety nets; we don't claim them as ours but they run automatically because the fork inherits them. Upstream's sign-time `allowlist` runs alongside our decider-time `allowlist` — same intent at two different points in the pipeline.
+
+This split is deliberate. Two of our five (`yield-curve-preservation`, `burn-rate-oracle`) literally cannot work at sign time — they reason about choices that don't exist yet as transactions. Trying to wedge them into upstream's tx-shaped contract was rejected in Phase 3 (logged in `docs-verified/DEVIATIONS.md` → *Architectural Pivots*).
+
+### 8.1 Policy contract (layer 1)
+
+Every layer-1 policy is a single file under `cli/policies/`. Exports:
 
 ```typescript
 export const policyName: string    // unique slug
@@ -542,19 +557,27 @@ export const policyVersion: string // semver
 export async function evaluate(context: PolicyContext): Promise<PolicyResult>
 ```
 
-`run-policies.mjs` (already in PR #5) calls each policy in registered order. First failure short-circuits and returns reason.
+Our dispatcher (`cli/lib/qm/run-policies.js`) calls each policy in registered order. First failure short-circuits and returns the reason.
+
+Layer 2 keeps upstream's `check(ctx) → { allow, reason? }` contract. Untouched.
 
 ### 8.2 The five policies Quartermaster ships
 
-| # | Name | File | Purpose |
-|---|---|---|---|
-| 1 | `allowlist` | upstream | Destination must be in fleet allowlist |
-| 2 | `max-per-action-cap` | new | Top-up ≤ MAX_USDC_PER_ACTION (default 100) |
-| 3 | `cooldown-window` | new | No second top-up to same wallet within COOLDOWN_MIN (default 30) |
-| 4 | `burn-rate-oracle` | new | Confirms projected runway is below threshold; rejects if burn rate looks manipulated |
-| 5 | `yield-curve-preservation` | new | Source asset must be the lowest-APY available source with sufficient balance |
+| # | Name | File | Layer | Purpose |
+|---|---|---|---|---|
+| 1 | `allowlist` | `cli/policies/allowlist.mjs` | 1 (decider) | Target wallet must be in fleet registry |
+| 2 | `max-per-action-cap` | `cli/policies/max-per-action-cap.mjs` | 1 (decider) | Top-up ≤ MAX_USDC_PER_ACTION (default 100) |
+| 3 | `cooldown-window` | `cli/policies/cooldown-window.mjs` | 1 (decider) | No second top-up to same wallet within COOLDOWN_MIN (default 30) |
+| 4 | `burn-rate-oracle` | `cli/policies/burn-rate-oracle.mjs` | 1 (decider) | Confirms projected runway is below threshold; rejects if burn rate looks manipulated |
+| 5 | `yield-curve-preservation` | `cli/policies/yield-curve-preservation.mjs` | 1 (decider) | Source asset must be the lowest-APY available source with sufficient balance |
 
-Plus existing upstream policies unchanged: `deny-approvals`, `deny-transfers`.
+Inherited from upstream (untouched, run at layer 2):
+
+| Name | File | Layer | Purpose |
+|---|---|---|---|
+| `allowlist` | `cli/cli/policies/allowlist.mjs` | 2 (sign) | Tx `to` must be in OWS allowlist |
+| `deny-approvals` | `cli/cli/policies/deny-approvals.mjs` | 2 (sign) | Block ERC-20 `approve()` calls |
+| `deny-transfers` | `cli/cli/policies/deny-transfers.mjs` | 2 (sign) | Block raw native transfers |
 
 ### 8.3 burn-rate-oracle math *[LOCKED]*
 
@@ -619,11 +642,19 @@ Default 100 USDC. Tunable.
 
 ### 8.7 Composition rules *[LOCKED]*
 
+Within a layer:
+
 - ALL-must-pass, never majority or weighted
-- Pure evaluators — cannot mutate state
-- Adding a policy = drop a file in `cli/policies/`, register in `run-policies.mjs`, no other code change
-- Failures must include reasonCode (machine) + reasonText (human)
+- Pure evaluators — no fs reads, no API calls, no clock reads (use `context.now`), no random
+- Adding a layer-1 policy = drop a file in `cli/policies/`, register in `cli/lib/qm/run-policies.js`, no other code change
+- Failures must include `reasonCode` (machine) + `reasonText` (human)
 - All evaluations logged to ledger as `policyChecks[]` on the action
+
+Across layers:
+
+- Layer 1 runs first (decider, before tx construction). Failure halts immediately; no tx is built.
+- Layer 2 runs at sign time. If layer 1 passes but layer 2 rejects, the action transitions to `blocked` with the layer-2 reason.
+- Both layers must pass for an action to reach `confirmed`.
 
 ### 8.8 Why each policy is novel (pitch this)
 

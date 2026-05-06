@@ -40,6 +40,19 @@ export const WalletWithDerived = SubordinateWallet.extend({
 export type WalletWithDerived = z.infer<typeof WalletWithDerived>;
 
 /**
+ * TreasurySource joined with its current on-chain balance — runtime / API
+ * shape. The persisted `TreasurySource` (in `~/.zerion/quartermaster/treasury.json`)
+ * is config-only per PRD §7. The watcher fetches the live balance per tick
+ * and the daemon emits this enriched shape on `/api/state.treasury`,
+ * `/api/treasury`, and as inputs to the layer-1 yield-curve-preservation
+ * policy (PRD §8.4 line 1 needs `balance` to filter eligible sources).
+ */
+export const TreasurySourceWithBalance = TreasurySource.extend({
+  balance: z.number().nonnegative(),
+});
+export type TreasurySourceWithBalance = z.infer<typeof TreasurySourceWithBalance>;
+
+/**
  * Aggregate fleet/treasury KPIs surfaced on `/overview`. Server-derived;
  * not in PRD §7. Daemon computes from fleet + treasury + ledger query.
  */
@@ -78,7 +91,7 @@ export type PolicyStats = z.infer<typeof PolicyStats>;
  */
 export const StateResponse = HealthInfo.extend({
   fleet: z.array(WalletWithDerived),
-  treasury: z.array(TreasurySource),
+  treasury: z.array(TreasurySourceWithBalance),
   actions: z.array(TopUpAction),
   kpis: Kpis,
   policyStats: PolicyStats,
@@ -103,9 +116,9 @@ export const FleetWalletDetailResponse = z
 export type FleetWalletDetailResponse = z.infer<typeof FleetWalletDetailResponse>;
 
 /**
- * `/api/treasury` — list of sources.
+ * `/api/treasury` — list of sources with current on-chain balance.
  */
-export const TreasuryResponse = z.array(TreasurySource);
+export const TreasuryResponse = z.array(TreasurySourceWithBalance);
 export type TreasuryResponse = z.infer<typeof TreasuryResponse>;
 
 /**

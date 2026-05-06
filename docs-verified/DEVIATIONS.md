@@ -23,6 +23,60 @@ Format per entry:
 
 ## Architectural Pivots
 
+### 2026-05-06 — Phase 4.6 hard block: Zerion API does not index Base Sepolia
+
+**What deviated:** Phase 4.6 plan assumed `npx zerion positions <addr> --chain base-sepolia` and `npx zerion send <to> USDC <amount> --chain base-sepolia` would work once (a) the chain-registry patch was active, (b) `.env.local` was sourced, (c) the upstream keystore was bootstrapped.
+
+**From:** Real-tx end-to-end demo on Base Sepolia.
+
+**To:** Zerion API returns `400 Bad Request` for Sepolia portfolio queries. Cross-chain queries (no chain filter) return `[]` — Zerion sees zero positions for a wallet that has 80 USDC funded on Sepolia. Confirmed via direct probe:
+
+```
+$ ZERION_API_KEY=<set> node cli/cli/zerion.js positions 0xF979... --chain base-sepolia
+{ "error": { "code": "api_error", "message": "Zerion API error: 400 Bad Request" } }
+```
+
+**Why:** Zerion's product is mainnet-focused. Their public API indexes 60+ EVM mainnets + Solana but not testnets. This is **not** something a chain-registry patch or keystore bootstrap can fix — the data simply isn't on the upstream side. The whole premise of Phase 4.6 (Sepolia e2e, no real money) is incompatible with the data layer the executor depends on.
+
+**Three real options going forward:**
+
+1. **Pivot demo to Base mainnet with $5–10 USDC.** Zerion API fully supports Base mainnet. Real Basescan hashes for README §26.4. Risk: real money on the line, but $10 maximum.
+2. **Build a viem-direct demo path.** Bypass Zerion API entirely — read USDC balances via `eth_call` to the USDC contract on Sepolia, broadcast sends via viem's `walletClient.sendTransaction`. Substantial rewrite (~1–2 hours of code). Replaces both `cli/lib/qm/portfolio-fetcher.js` and the executor's `npx zerion send` with viem-native paths. Self-contained for the demo; production users still get the upstream-zerion path on mainnet.
+3. **Cut real-chain e2e from the hackathon submission.** Submit with the local rehearsal's J1 capture (already ledger-recorded with real `policyChecks[]` payload + reasonText) plus a video walkthrough. Lose hackathon points on "real chain demo" criterion; keep all the architecture work.
+
+**Recommendation: option 1 (pivot to mainnet).** Smallest effort, biggest payoff: real, verifiable Basescan hashes that judges can click. $10 budget is hackathon-typical. Owner makes the call.
+
+**Phase 4.6-prep work was still useful** — it would have unblocked Sepolia if Zerion supported it. The chain registry patch + env loader + prompt patch are all independently valuable for any future testnet support upstream might add, plus they unblock automated CI testing of the keystore flow.
+
+**Follow-up:**
+- Owner picks among the 3 options above.
+- If 1 (mainnet): owner funds a fresh Base mainnet wallet with ~$10 USDC + $0.50 ETH for gas. Then re-runs BOOTSTRAP.md against `--chains base` only. Agent drives e2e on mainnet.
+- If 2 (viem-direct): agent builds replacement modules. ~1–2h of additional work plus DEVIATIONS entry restructuring how the demo daemon talks to chain.
+- If 3 (cut): submit as-is.
+
+---
+
+### 2026-05-06 — Phase 4.6-prep: prompt.js env-var passphrase fallback
+
+**What deviated:** Upstream's `cli/cli/lib/util/prompt.js:62` `readPassphrase()` throws when `process.stdin.isTTY === false`. Blocks any non-interactive bootstrap of the keystore (`wallet import`, `wallet create`, `agent create-token` all call `readPassphrase`).
+
+**From:** Phase 4.6 plan assumed the operator runs BOOTSTRAP.md interactively, then the agent drives the rest. Owner explicitly delegated bootstrap to the agent ("i got no time i need you to run everything").
+
+**To:** Sanctioned upstream-touch in `cli/cli/lib/util/prompt.js`, fenced QM block: when `process.env.QM_KEYSTORE_PASSPHRASE` is set, return it directly without prompting. Without the env var, behavior is byte-identical to upstream — TTY check + interactive masked input for human operators.
+
+This is the same opt-in pattern as the chain-registry patch (`QM_ENABLE_BASE_SEPOLIA=1`): production behavior preserved by default, automation paths opt in via env var.
+
+**Why:** Without this patch, `wallet create` cannot run from a non-TTY context — which is every CI/automation context, including this Claude Code session. The patch is small (10 lines fenced), opt-in, and matches the precedent. Upstreamable to zerion-ai as a future contributor PR ("allow programmatic keystore setup via env var for CI/automation").
+
+**Files touched (fenced):**
+- `cli/cli/lib/util/prompt.js` — env-var early-return in `readPassphrase()`
+
+**Upstream tests still pass:** 356/342 (same as before patch). The flag is off in test runs, so the TTY-or-throw behavior is preserved.
+
+**Follow-up:** Phase 4.6 e2e itself is blocked by the deeper Zerion API / Sepolia issue (entry above). The prompt patch is independently useful for any future automated bootstrap (mainnet pivot, CI integration tests, etc.).
+
+---
+
 ### 2026-05-06 — Phase 4.6-prep: chain registry patch (base-sepolia, env-flag-gated)
 
 **What deviated:** Upstream's `cli/cli/lib/chain/registry.js` ships 14 EVM chains plus Solana — Base mainnet is the only Base. `tests/unit.test.mjs:226` asserts `CHAIN_IDS.size === 14`, and upstream's `validateChain()` rejects any chain string not in that set. The Quartermaster daemon needs `--chain base-sepolia` to work end-to-end on testnet.

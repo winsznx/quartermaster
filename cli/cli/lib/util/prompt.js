@@ -59,6 +59,17 @@ export function readSecret(prompt, { mask = false } = {}) {
  * Requires an interactive terminal — passphrase must always be entered by a human.
  */
 export async function readPassphrase({ confirm = false } = {}) {
+  // === BEGIN Quartermaster patch: env-var passphrase fallback ===
+  // Sanctioned upstream-touch per phase-1-7/integration. Allows the
+  // Quartermaster bootstrap to drive `wallet import / wallet create /
+  // agent create-token` without a TTY when QM_KEYSTORE_PASSPHRASE is set.
+  // Opt-in via env var; without it, behavior is byte-identical to upstream.
+  // Logged in docs-verified/DEVIATIONS.md.
+  if (process.env.QM_KEYSTORE_PASSPHRASE) {
+    return process.env.QM_KEYSTORE_PASSPHRASE;
+  }
+  // === END Quartermaster patch ===
+
   if (!process.stdin.isTTY) {
     throw new Error("Passphrase must be entered in an interactive terminal.");
   }

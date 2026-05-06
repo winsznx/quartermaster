@@ -88,6 +88,25 @@ register("agent", "delete-policy", agentDeletePolicy);
 import configCmd from "./commands/config.js";
 registerSingle("config", configCmd);
 
+// === BEGIN Quartermaster commands (Phase 2 — fork extension) ===
+// Sanctioned by repo owner per phase-1-7/integration scope; logged in
+// docs-verified/DEVIATIONS.md under "Architectural Pivots → Phase 2 sanctioned
+// upstream-touch". Block boundaries are intentional so future upstream syncs
+// can re-apply this section verbatim.
+import fleetAdd from "../commands/fleet/add.js";
+import fleetList from "../commands/fleet/list.js";
+import fleetRemove from "../commands/fleet/remove.js";
+import fleetStatus from "../commands/fleet/status.js";
+import treasuryAdd from "../commands/treasury/add.js";
+import treasuryList from "../commands/treasury/list.js";
+register("fleet", "add", fleetAdd);
+register("fleet", "list", fleetList);
+register("fleet", "remove", fleetRemove);
+register("fleet", "status", fleetStatus);
+register("treasury", "add", treasuryAdd);
+register("treasury", "list", treasuryList);
+// === END Quartermaster commands ===
+
 // --- Dispatch ---
 
 try {

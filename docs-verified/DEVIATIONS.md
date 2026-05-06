@@ -23,6 +23,34 @@ Format per entry:
 
 ## Architectural Pivots
 
+### 2026-05-06 — Phase 2 sanctioned upstream-touch in cli/cli/zerion.js + cli/package.json
+
+**What deviated:** Phase 1 contract said "DO NOT touch upstream files." Phase 2 needed to wire new commands so `zerion fleet add ...` works (PRD §31.3 daily artifact).
+
+**From:** Pure-fork — upstream files byte-identical to the snapshot.
+
+**To:** Two upstream files modified, with explicit fence comments so future upstream syncs can re-apply them verbatim:
+
+1. `cli/cli/zerion.js` — appended a single fenced block:
+   ```
+   // === BEGIN Quartermaster commands (Phase 2 — fork extension) === ... // === END Quartermaster commands ===
+   ```
+   Inside the block: 6 imports + 6 `register(...)` calls for fleet/treasury commands.
+2. `cli/package.json` — added two dependencies: `@quartermaster/shared-schemas` (workspace-local), `zod` (4.4.3 pinned). The Phase 1 underscore-pin fields (`_upstreamCommit` etc.) were already a sanctioned exception; the dep additions are in the same exception class.
+
+**Why:** Three options were considered:
+- **A.** Modify zerion.js + package.json with fenced/minimal additions. Smallest impact, ergonomic (`zerion fleet add` works directly).
+- **B.** New sibling entry `cli/zerion-qm.js` + new bin in package.json. Splits the brand (`zerion-qm fleet add` vs `zerion fleet add`).
+- **C.** External wrapper at `scripts/qm.mjs`. Fails PRD §31.3 daily artifact which mandates `zerion fleet add ...` works as a shell command.
+
+C was eliminated by spec; B fragments the brand while still touching package.json; A is smallest impact and matches the precedent set by the `_upstreamCommit` field.
+
+**Follow-up:**
+- When pulling future zerion-ai upstream commits via `git subtree pull`, the QM block in zerion.js must be re-applied if upstream rewrites the file. The fence comments make this a one-paste operation.
+- If upstream upstreams a "command plugin" extension point (PRs welcome there), migrate to it and remove the fence.
+
+---
+
 ### 2026-05-06 — Day 0 compressed for velocity
 
 **What deviated:** PRD §27 Day 0 Gate checklist (full set of pre-Phase-1 verifications).
@@ -78,6 +106,22 @@ The pivot keeps the production-correctness story intact: judges see real testnet
 ---
 
 ## Doc-Verification Drift
+
+### 2026-05-06 — zod major-version bump from PRD §21.2
+
+**What deviated:** PRD §21.2 pinned versions table.
+
+**From:** `zod 3.23+` (starting point).
+
+**To:** `zod 4.4.3` (exact pin, no caret) in both `packages/shared-schemas/package.json` and `cli/package.json`. Snapshotted to `docs-verified/zod.md` with content sha256 + relevant breaking-change notes for v3 → v4 transition.
+
+**Why:** Latest 3.x is `3.9.8` (maintenance only). Active development is on 4.x; v4 has been stable since mid-2025. Picking v4 today avoids a future migration. Our schema usage is a minimal subset (`z.object().strict()`, `z.discriminatedUnion("type", [...])`, `z.enum`, `.parse`, `.safeParse`) that has identical surface in v3 and v4 — downgrade would be near-zero cost if needed.
+
+**Follow-up:**
+- Re-snapshot `docs-verified/zod.md` before each minor bump (4.5+).
+- If a Phase 4 daemon dep (e.g., `hono`) pins a different zod major, revisit.
+
+---
 
 ### 2026-04-30 — Initial scaffold version pins
 

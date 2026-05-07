@@ -5,6 +5,7 @@ import { Activity, Bot, Landmark } from "lucide-react";
 
 import type { StateResponse } from "@quartermaster/shared-schemas";
 
+import { DaemonOfflinePanel } from "@/components/daemon-offline-panel";
 import { LedgerTable } from "@/components/ledger-table";
 import { RunwayChart } from "@/components/runway-chart";
 import { StatsCard } from "@/components/stats-card";
@@ -154,16 +155,7 @@ function OverviewOffline({ error }: { error: string }) {
         <h1 className="text-3xl font-semibold text-text-primary">Overview</h1>
         <p className="text-text-secondary">At-a-glance health of your agent economy.</p>
       </div>
-      <div className="border border-border-subtle rounded-[6px] bg-surface-1 p-8 text-center">
-        <p className="font-medium text-text-primary">Daemon offline.</p>
-        <p className="text-sm text-text-secondary mt-2 mb-4">
-          The dashboard cannot reach the Quartermaster daemon. Start it with:
-        </p>
-        <code className="inline-block bg-surface-2 text-accent px-3 py-2 rounded font-mono text-sm">
-          zerion qm run
-        </code>
-        <p className="text-[11px] text-text-muted mt-4 font-mono">{error}</p>
-      </div>
+      <DaemonOfflinePanel error={error} />
     </div>
   );
 }

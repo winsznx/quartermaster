@@ -23,6 +23,20 @@ Format per entry:
 
 ## Architectural Pivots
 
+### 2026-05-07 — Phase 4.6 e2e executed on Base mainnet, not Sepolia
+
+**Pivot in one line:** demo executed e2e on Base mainnet rather than Sepolia — chain-registry constraints + cleaner upstream support; demo evidence stronger as a result.
+
+**What deviated:** PRD §22.1 demo setup and the original Phase 4 plan both targeted Base Sepolia (`eip155:84532`).
+
+**Why:** Zerion's portfolio + trading API doesn't index Base Sepolia — `npx zerion positions <addr> --chain base-sepolia` returns 400 Bad Request even with the chain-registry patch active and a valid API key. The watcher → decider → executor pipeline depends on Zerion API as the data layer; no Sepolia data = no daemon flow. See "Phase 4.6 hard block" entry below.
+
+**Outcome:** $4.91 USDC + $0.92 ETH funded a fresh Base mainnet wallet. Full e2e captured (J1 BURN_RATE_ANOMALY_DETECTED ×2, 2 happy-path top-ups confirmed on-chain, reconcile gate proven). Hash table lives in `README.md` §26.4.
+
+The Phase 4.6-prep patches (chain registry, prompt env-fallback, .env loader) all remain useful — they enable the autonomous mainnet bootstrap and would unblock Sepolia immediately if upstream adds testnet indexing.
+
+---
+
 ### 2026-05-06 — Phase 4.6 hard block: Zerion API does not index Base Sepolia
 
 **What deviated:** Phase 4.6 plan assumed `npx zerion positions <addr> --chain base-sepolia` and `npx zerion send <to> USDC <amount> --chain base-sepolia` would work once (a) the chain-registry patch was active, (b) `.env.local` was sourced, (c) the upstream keystore was bootstrapped.
@@ -386,3 +400,5 @@ The `framer-motion` dependency itself is fine — it's the motion patterns that 
 - **Owner action:** confirm brief's motion budget is the locked spec, or amend brief if the brief was over-strict.
 - If brief stands: open a follow-up PR on FE side to (a) reduce all transition durations to ≤160ms, (b) replace `useInView`/scroll-triggered reveals with static rendering, (c) remove terminal `runTerminal()` cycle (render the final state statically), (d) keep `framer-motion` package or remove if no compliant uses remain.
 - This PR (`feat/dashboard-env-var-daemon-url`) does NOT touch `apps/landing/app/page.tsx` — FE dev's code, FE dev's call. Flagged in PR description.
+
+**Resolution — 2026-05-07 (Phase 6):** Brief stands. Rewrote `apps/landing/app/page.tsx` to render the final state statically. All `framer-motion` usage removed; the dependency has been dropped from `apps/landing/package.json`. The terminal pane now shows the final J1 + happy-path state as static text (no `setTimeout` cycle). Section reveals replaced with normal flow. Per-element transitions live in CSS via Tailwind `transition-colors duration-150` (≤160ms budget). `pnpm typecheck` + `pnpm --filter landing build` both green. **Closed.**

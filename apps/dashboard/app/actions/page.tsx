@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { DaemonOfflinePanel } from "@/components/daemon-offline-panel";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { daemonClient } from "@/lib/daemon-client";
@@ -25,7 +26,7 @@ export default function ActionsPage() {
         </div>
       )}
 
-      {view.status === "offline" && <DaemonOffline error={view.error} />}
+      {view.status === "offline" && <DaemonOfflinePanel error={view.error} />}
       {(view.status === "drift" || view.status === "error") && <ErrorBanner error={view.error} />}
 
       {view.status === "ok" && (
@@ -100,19 +101,6 @@ export default function ActionsPage() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function DaemonOffline({ error }: { error: string }) {
-  return (
-    <div className="border border-border-subtle rounded-[6px] bg-surface-1 p-6">
-      <p className="font-medium text-text-primary">Daemon offline.</p>
-      <p className="text-sm text-text-secondary mt-2 mb-3">Start it with:</p>
-      <code className="inline-block bg-surface-2 text-accent px-3 py-1.5 rounded font-mono text-sm">
-        zerion qm run
-      </code>
-      <p className="text-[11px] text-text-muted mt-3 font-mono">{error}</p>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { DaemonOfflinePanel } from "@/components/daemon-offline-panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { daemonClient } from "@/lib/daemon-client";
 import { usePolledDaemon } from "@/lib/use-daemon";
@@ -20,14 +21,7 @@ export default function SettingsPage() {
 
       {view.status === "loading" && <Skeleton className="h-72 w-full" />}
 
-      {view.status === "offline" && (
-        <div className="border border-border-subtle rounded-[6px] bg-surface-1 p-6">
-          <p className="font-medium text-text-primary">Daemon offline.</p>
-          <code className="inline-block bg-surface-2 text-accent px-3 py-1.5 rounded font-mono text-sm mt-3">
-            zerion qm run
-          </code>
-        </div>
-      )}
+      {view.status === "offline" && <DaemonOfflinePanel error={view.error} />}
 
       {(view.status === "error" || view.status === "drift") && (
         <div className="border border-warning/40 bg-warning/5 rounded-[6px] p-6">

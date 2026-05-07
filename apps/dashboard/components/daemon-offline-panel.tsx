@@ -9,29 +9,29 @@
 export function DaemonOfflinePanel({ error }: { error?: string }) {
   return (
     <div className="border border-border-subtle rounded-[6px] bg-surface-1 p-6">
-      <p className="font-medium text-text-primary">Daemon offline.</p>
-      <p className="text-sm text-text-secondary mt-2 mb-3">
-        The Quartermaster daemon runs locally — it holds the principal&apos;s signing key and
-        watches the fleet on your machine. The dashboard polls it at{" "}
-        <code className="font-mono text-accent">http://127.0.0.1:7402</code>.
+      <p className="font-medium text-text-primary">This dashboard requires a local Quartermaster daemon.</p>
+      <p className="text-sm text-text-secondary mt-2 mb-4">
+        The daemon runs on your machine — it holds your signing key and watches the fleet. The
+        dashboard polls it at <code className="font-mono text-accent">http://127.0.0.1:7402</code>.
+        Setup takes about 10 minutes.
       </p>
-      <p className="text-sm text-text-secondary mb-3">Start it with:</p>
-      <code className="inline-block bg-surface-2 text-accent px-3 py-1.5 rounded font-mono text-sm">
-        zerion qm run
-      </code>
-      <p className="text-xs text-text-muted mt-4">
-        Haven&apos;t set up the keystore yet?{" "}
+
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
         <a
           href="https://github.com/winsznx/quartermaster/blob/main/cli/BOOTSTRAP.md"
-          className="text-accent hover:text-accent-hover underline transition-colors duration-150"
+          className="bg-accent text-text-inverse px-5 py-2 rounded-[6px] font-medium hover:bg-accent-hover transition-colors duration-150 text-sm inline-block"
           target="_blank"
           rel="noopener noreferrer"
         >
-          See cli/BOOTSTRAP.md
-        </a>{" "}
-        for the operator setup steps.
-      </p>
-      {error && <p className="text-[11px] text-text-muted mt-3 font-mono">{error}</p>}
+          Open BOOTSTRAP guide →
+        </a>
+        <span className="text-xs text-text-muted">
+          Already set up? Run{" "}
+          <code className="font-mono text-accent">zerion qm run</code> in your terminal.
+        </span>
+      </div>
+
+      {error && <p className="text-[11px] text-text-muted mt-4 font-mono">{error}</p>}
     </div>
   );
 }

@@ -267,17 +267,24 @@ export default function LandingPage() {
 
         <div className="section-divider">◆</div>
 
-        {/* Section 6 — Demo */}
+        {/* Section 6 — Demo placeholder; recorded video lands here at submission time */}
         <section id="demo" className="py-[64px] px-[48px] max-w-[1100px] mx-auto">
           <h2 className="font-sans text-[28px] font-medium mb-[32px] text-center text-text-primary">See It Run</h2>
           <div className="w-full max-w-[900px] mx-auto aspect-video bg-surface-1 border border-border-subtle rounded-[6px] overflow-hidden flex items-center justify-center relative shadow-lg">
-            <div className="absolute inset-0 bg-[#0B0D0E] flex flex-col items-center justify-center z-10">
-              <PlayCircle size={64} strokeWidth={1} className="text-accent mb-6 opacity-80" />
-              <div className="font-mono text-text-muted text-[13px] tracking-widest">Demo — 2:40</div>
+            <div className="absolute inset-0 bg-[#0B0D0E] flex flex-col items-center justify-center text-center px-6">
+              <PlayCircle size={64} strokeWidth={1} className="text-accent mb-5 opacity-80" />
+              <p className="text-text-primary text-base font-medium mb-2">Demo video lands at submission</p>
+              <p className="text-text-secondary text-sm max-w-md mb-6">
+                Until then, the proof is on Base mainnet. Every transaction that drove the daemon
+                during build is linked from the README.
+              </p>
+              <a
+                href="https://github.com/winsznx/quartermaster#264-live-demo--base-mainnet-transactions"
+                className="inline-block bg-accent text-text-inverse px-6 py-2.5 rounded-[6px] font-medium hover:bg-accent-hover transition-colors duration-150 text-sm"
+              >
+                See on-chain hashes →
+              </a>
             </div>
-            <video className="w-full h-full object-cover relative z-0" controls preload="none">
-              <source src="/demo.mp4" type="video/mp4" />
-            </video>
           </div>
         </section>
       </main>

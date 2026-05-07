@@ -100,6 +100,8 @@ See `docs-verified/DEVIATIONS.md` for any drift from PRD §21.2 pinned versions.
 
 Quartermaster executed these transactions on **Base mainnet** during build. Click any hash to verify on Basescan. Every action below was driven by the daemon (or the bootstrap setup), not pre-recorded.
 
+> Phase 7 extends this table with x402-paid subordinate calls (each one a real on-chain USDC transfer routed through the x402 facilitator) once the watcher is wired to read x402 receipts as the burn signal. Today's burn loop uses direct USDC transfers, which proves the watcher → decider → policy → executor path on the same primitives.
+
 ### J1 — burn-rate-oracle refusal (the policy moment)
 
 Two consecutive top-up plans for `alpha-2` were **blocked by `burn-rate-oracle`** with the locked reason code. No on-chain tx — refusal happens pre-construction. The full `policyChecks[]` array is in `ledger.jsonl` and renders on `/actions/[id]` via the dashboard's `ShieldAlert` block.

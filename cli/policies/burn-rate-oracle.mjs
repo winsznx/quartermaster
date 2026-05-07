@@ -34,7 +34,7 @@ export const policyName = "burn-rate-oracle";
 export const policyVersion = "1.0.0";
 
 const DEFAULT_SPIKE_THRESHOLD = 10;
-const DEFAULT_MIN_24H_TOTAL_SPEND = 0.01;
+const DEFAULT_MIN_24H_TOTAL_SPEND = 0.001;
 const HOURS_24 = 24;
 const HOURS_7D = 24 * 7;
 

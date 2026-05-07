@@ -14,11 +14,18 @@
  */
 
 import { spawn as nativeSpawn } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { TopUpAction, TxHash } from "@quartermaster/shared-schemas";
 
 import { buildSubprocessEnv } from "./env.js";
 import { appendEvent } from "./ledger.js";
+
+const ZERION_CLI = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../cli/zerion.js",
+);
 
 const DEFAULT_TIMEOUT_MS = {
   swap: 90_000,
@@ -39,7 +46,7 @@ const DEFAULT_TIMEOUT_MS = {
  */
 function runZerion(args, { timeoutMs, spawnImpl = nativeSpawn } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawnImpl("npx", ["zerion", ...args], {
+    const child = spawnImpl("node", [ZERION_CLI, ...args], {
       stdio: ["ignore", "pipe", "pipe"],
       env: buildSubprocessEnv(),
     });
@@ -93,16 +100,22 @@ function runZerion(args, { timeoutMs, spawnImpl = nativeSpawn } = {}) {
 
 function pickTxHash(parsed, key) {
   if (!parsed || typeof parsed !== "object") return null;
-  // Try the obvious shapes; let zod's TxHash schema validate.
-  const candidate =
-    parsed[key] ??
-    parsed.txHash ??
-    parsed.transactionHash ??
-    parsed.tx?.hash ??
-    parsed.transaction?.hash;
-  if (typeof candidate !== "string") return null;
-  const result = TxHash.safeParse(candidate);
-  return result.success ? result.data : null;
+  // Upstream's send/swap/bridge return `{ send: { ... metadata }, tx: { hash, status, ... } }`
+  // — the actual tx hash lives at `parsed.tx.hash`. Earlier shapes (txHash at
+  // top level) are kept as fallbacks for older upstream versions.
+  const candidates = [
+    parsed.tx?.hash,
+    parsed.transaction?.hash,
+    parsed.txHash,
+    parsed.transactionHash,
+    typeof parsed[key] === "string" ? parsed[key] : null,
+  ];
+  for (const c of candidates) {
+    if (typeof c !== "string") continue;
+    const result = TxHash.safeParse(c);
+    if (result.success) return result.data;
+  }
+  return null;
 }
 
 /**
@@ -166,7 +179,7 @@ export async function executeAction(plannedAction, plan, options = {}) {
     }
 
     const sendResp = await runner(
-      ["send", plan.sendTo, plan.sendToken, String(plan.sendAmount)],
+      ["send", plan.sendToken, String(plan.sendAmount), "--to", plan.sendTo, "--wallet", "principal", "--chain", "base"],
       { timeoutMs: timeouts.send, spawnImpl: options.spawnImpl },
     );
     const sendHash = pickTxHash(sendResp, "send");

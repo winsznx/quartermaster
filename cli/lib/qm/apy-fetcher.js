@@ -13,9 +13,16 @@
  */
 
 import { spawn } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { buildSubprocessEnv } from "./env.js";
 import { appendEvent } from "./ledger.js";
+
+const ZERION_CLI = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../cli/zerion.js",
+);
 
 const FETCH_TIMEOUT_MS = 30_000;
 
@@ -25,7 +32,7 @@ const FETCH_TIMEOUT_MS = 30_000;
  */
 function runZerionPositions(address, { timeoutMs = FETCH_TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn("npx", ["zerion", "positions", address, "--positions", "defi"], {
+    const child = spawn("node", [ZERION_CLI, "positions", address, "--positions", "defi"], {
       stdio: ["ignore", "pipe", "pipe"],
       env: buildSubprocessEnv(),
     });

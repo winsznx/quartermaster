@@ -22,11 +22,18 @@
  */
 
 import { spawn } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { print, printError } from "../../cli/lib/util/output.js";
 
 import { buildSubprocessEnv } from "../../lib/qm/env.js";
 import { getWallet } from "../../lib/fleet/registry.js";
+
+const ZERION_CLI = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../cli/zerion.js",
+);
 
 const SEND_INTERVAL_MS = 10_000; // every 10s
 const SEND_TIMEOUT_MS = 60_000;
@@ -35,8 +42,8 @@ const DEFAULT_DURATION_SEC = 300;
 function runZerionSend({ walletId, to, amount }) {
   return new Promise((resolve, reject) => {
     const child = spawn(
-      "npx",
-      ["zerion", "send", to, "USDC", String(amount), "--wallet", walletId],
+      "node",
+      [ZERION_CLI, "send", "USDC", String(amount), "--to", to, "--wallet", walletId, "--chain", "base"],
       { stdio: ["ignore", "pipe", "pipe"], env: buildSubprocessEnv() },
     );
     let stdout = "";

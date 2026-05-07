@@ -15,14 +15,24 @@
  */
 
 import { spawn } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { buildSubprocessEnv } from "./env.js";
+
+// Path to the LOCAL forked zerion CLI. `npx zerion` would resolve to the
+// published package and miss our patches (chain registry, prompt env-var,
+// etc.); always spawn our local copy.
+const ZERION_CLI = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../cli/zerion.js",
+);
 
 const FETCH_TIMEOUT_MS = 30_000;
 
 function runZerion(args, { timeoutMs = FETCH_TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn("npx", ["zerion", ...args], {
+    const child = spawn("node", [ZERION_CLI, ...args], {
       stdio: ["ignore", "pipe", "pipe"],
       env: buildSubprocessEnv(),
     });
@@ -85,7 +95,7 @@ function findPositionBySymbol(positionsResponse, symbol) {
  * The watcher derives recent burn from successive observations (PRD §9).
  */
 export async function fetchPortfolio(address, _chainId) {
-  const response = await runZerion(["positions", address, "--positions", "simple"]);
+  const response = await runZerion(["positions", address, "--positions", "simple", "--chain", "base"]);
   const usdcPosition = findPositionBySymbol(response, "USDC");
   if (!usdcPosition) {
     // Wallet has no USDC position — treat as zero balance. This is

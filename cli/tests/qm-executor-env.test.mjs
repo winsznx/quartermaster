@@ -75,8 +75,11 @@ describe("executor — env propagation to spawned subprocesses", () => {
     );
 
     assert.ok(captured.length > 0, "spawn was never called");
-    const sendCall = captured.find((c) => c.args[0] === "zerion" && c.args[1] === "send");
-    assert.ok(sendCall, "did not see a `npx zerion send` invocation");
+    // After Phase 4.6 fix: spawn invokes `node <ZERION_CLI_PATH> send ...`
+    // (not `npx zerion ...`) to ensure the LOCAL forked CLI is used, not the
+    // published npm package which lacks our patches.
+    const sendCall = captured.find((c) => c.cmd === "node" && c.args[1] === "send");
+    assert.ok(sendCall, "did not see a `node <cli> send` invocation");
     assert.equal(sendCall.env.QM_ENABLE_BASE_SEPOLIA, "1");
   });
 

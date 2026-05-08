@@ -1,100 +1,263 @@
 # Quartermaster
 
-> Treasury layer for the agent economy. Built on Zerion CLI.
+> **Treasury layer for the agent economy.** Watches a fleet of x402-paying AI agents, projects runway, tops them up from the principal's yield positions — within five composable on-chain policies.
 
-x402 makes AI agents pay USDC per API call. They run dry. Quartermaster watches a fleet of agent wallets, projects when each will starve, and tops them up from the principal's yield positions — within five composable on-chain policies.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/winsznx/quartermaster)](https://github.com/winsznx/quartermaster/commits/main)
+[![Landing](https://img.shields.io/badge/Landing-quartermaster--landing.vercel.app-black)](https://quartermaster-landing.vercel.app)
+[![Dashboard](https://img.shields.io/badge/Dashboard-quartermaster--dashboard.vercel.app-black)](https://quartermaster-dashboard.vercel.app)
 
 Submitted to the Colosseum Frontier Hackathon, Zerion CLI track.
 
-## Status
+---
 
-Phase A complete (theme tokens + dashboard offline shell). Build phases 0→6 per `MASTER_PRD.md` §31.
+## What is Quartermaster?
 
-## Surfaces & deploy targets
+**x402 made agents pay-as-they-go on-chain.** Coinbase shipped the protocol; Zerion shipped a CLI that lets agents settle each API call in USDC on Base. The agent's wallet is the budget; when it empties, the agent stops mid-task with no warning. That's a real operational problem the moment you run more than one.
 
-| Surface | Path | Deploy target | Notes |
-| --- | --- | --- | --- |
-| Landing | `apps/landing/` | **Vercel project A** — public marketing site | Static, no env vars |
-| Dashboard | `apps/dashboard/` | **Vercel project B** — public demo UI | Reads `NEXT_PUBLIC_DAEMON_URL` (Railway URL for the demo) |
-| Daemon | `cli/` (Phase 4) | **Railway** — public testnet demo daemon | Fresh Base Sepolia wallet; mainnet self-host only |
+**Quartermaster is the treasury that keeps them solvent.** A daemon watches each subordinate wallet's USDC balance via Zerion's API, derives an EWMA burn rate, projects when each will run dry, picks the lowest-yield drainable source from your treasury (idle USDC before staked ETH), and signs the top-up via an agent token whose authority is narrow by construction. No keys leave the operator's machine; no human in the loop after configuration.
 
-The Vercel-hosted dashboard polls the Railway-hosted demo daemon over HTTP. The demo daemon runs against Base Sepolia with a fresh testnet key — no mainnet wallets are ever exposed. Production users self-host (see [Self-host](#self-host) below).
+**The framework, not the daemon, is the contribution.** Five composable on-chain policies — `allowlist`, `max-per-action-cap`, `cooldown-window`, `burn-rate-oracle`, `yield-curve-preservation` — gate every action at decider-time, before any tx is constructed. Adding a sixth is a single file plus a one-line registration. The two-layer model (decider-time policy + sign-time policy) gives you both *don't plan it* and *don't sign it* — defense in depth, not just defense.
 
-This is a deliberate pivot from the original local-only architecture; rationale and protocol log in [`docs-verified/DEVIATIONS.md`](docs-verified/DEVIATIONS.md) under *Architectural Pivots*.
+## Live demonstration
 
-## Develop
+- **Real Base mainnet transactions** — top-ups, burn-rate-oracle blocks, x402 settlements. See [§26.4 Live demo](#264-live-demo--base-mainnet-transactions) below for the full hash table (Phase 7a post-fix run + Phase 4.6 annotated). Every hash links to Basescan.
+- **Demo video** — lands at `apps/landing/public/demo.mp4` (gracefully placeholdered until then; the landing page swaps in the `<video>` element automatically when the file is committed).
+- **Asciinema cast of the daemon driving the e2e** — lands at `apps/landing/public/hero.cast`. Same graceful-fallback pattern; the static terminal block on the landing page stays in place until the cast file is committed, then the asciinema-player CDN bundle takes over.
 
-```bash
-pnpm install
+The `scripts/run-phase7a.mjs` driver reproduces the entire e2e in one command. Output writes to `scripts/phase7a-results.json` for verification.
 
-pnpm dev:landing      # localhost:3000 (or 3002 if 3000 is occupied — see gap.md)
-pnpm dev:dashboard    # localhost:3001
+## Architecture
 
-# Build everything
-pnpm build
+The principal owns the seed phrase, the treasury wallet, and sets the policies. The Quartermaster daemon holds a narrow agent token with sign-only authority — it cannot export keys, change policies, or send to non-allowlisted addresses. Subordinate agents hold small float wallets and pay x402 settlements per API call. Trust flows downward only: a compromised subordinate cannot pull from the daemon; a compromised daemon cannot exceed policy-capped outflow.
 
-# Typecheck everything
-pnpm typecheck
+```
+┌────────────────────────────────────────────────────────────┐
+│                    PRINCIPAL (human)                       │
+│         owns: Treasury Wallet, sets Policies               │
+└──────────────────────┬─────────────────────────────────────┘
+                       │ creates agent token + policies
+                       ↓
+┌────────────────────────────────────────────────────────────┐
+│                  QUARTERMASTER DAEMON                      │
+│ ┌────────────┐  ┌────────────┐  ┌─────────────────────┐    │
+│ │ Watcher    │→ │ Decider    │→ │ Executor            │    │
+│ │ (cron)     │  │ (5-policy  │  │ (zerion CLI wrap)   │    │
+│ │            │  │  framework)│  │                     │    │
+│ └────────────┘  └────────────┘  └─────────────────────┘    │
+│      ↑                                   │                 │
+│      │ reads balances,                   │ signs via OWS   │
+│      │ burn rates, yields                │ with agent token│
+│      │ (Zerion API)                      │                 │
+└──────┼───────────────────────────────────┼─────────────────┘
+       │                                   │
+       │                                   ↓
+┌──────┼──────────────────┐   ┌────────────────────────────┐
+│ Zerion API              │   │ Forked Zerion CLI          │
+│ (portfolio, positions,  │   │ ┌─────────┐  ┌───────────┐ │
+│  pnl, transactions,     │   │ │commands │  │ policies  │ │
+│  fungibles)             │   │ │swap     │  │ (sign-time│ │
+└─────────────────────────┘   │ │bridge   │  │  layer 2) │ │
+                              │ │send     │  │           │ │
+                              │ │qm       │  │           │ │
+                              │ └─────────┘  └───────────┘ │
+                              └────────────────────────────┘
+                                          │
+                                          ↓ on-chain
+                              ┌────────────────────────────┐
+                              │  Base mainnet (settlement) │
+                              └────────────────────────────┘
+                                          │
+                                          ↓ USDC lands in
+                              ┌────────────────────────────┐
+                              │  Subordinate Agent Wallets │
+                              │  (each paying per-call     │
+                              │   Zerion API via x402)     │
+                              └────────────────────────────┘
 ```
 
-The dashboard reads `NEXT_PUBLIC_DAEMON_URL` and falls back to `http://127.0.0.1:7402` when unset, so local dev against your own daemon Just Works without a `.env.local`. See [`apps/dashboard/.env.example`](apps/dashboard/.env.example) for the public-demo configuration.
+The watcher reads balances from Zerion's portfolio API, the decider runs every planned action through the layer-1 policy framework, and the executor calls the forked Zerion CLI as a subprocess to sign and broadcast. Each tx the executor produces also passes through the upstream sign-time policies (layer 2 — `allowlist`, `deny-transfers`, etc., enforced at the wallet boundary). See [`docs-verified/DEVIATIONS.md`](docs-verified/DEVIATIONS.md) for the layer split rationale.
 
-## Self-host
+## Policy framework
 
-For production use against your own wallets, run the daemon on the same machine as the dashboard:
+The five layer-1 policies live in [`cli/policies/`](cli/policies). Every planned top-up runs through all five at decider-time, in order; rejection by any policy emits `topup_blocked` with a structured `reasonCode` + `reasonText` that the dashboard renders verbatim.
+
+| Policy | Reject when | Reason code |
+|---|---|---|
+| [`allowlist`](cli/policies/allowlist.mjs) | target wallet not registered in fleet | `NOT_IN_FLEET` |
+| [`max-per-action-cap`](cli/policies/max-per-action-cap.mjs) | planned amount exceeds `MAX_USDC_PER_ACTION` (default $100) | `EXCEEDS_MAX_PER_ACTION` |
+| [`cooldown-window`](cli/policies/cooldown-window.mjs) | last confirmed top-up to same target within `COOLDOWN_MIN` (default 30m) | `COOLDOWN_NOT_ELAPSED` |
+| [`burn-rate-oracle`](cli/policies/burn-rate-oracle.mjs) | recent EWMA burn ≥ 10× the 7d baseline (or sustained-need check fails) | `BURN_RATE_ANOMALY_DETECTED` / `NO_SUSTAINED_BURN` / `RUNWAY_NOT_BELOW_THRESHOLD` |
+| [`yield-curve-preservation`](cli/policies/yield-curve-preservation.mjs) | selected source is not the lowest-APY eligible position (would liquidate stETH while idle USDC covers) | `YIELD_CURVE_VIOLATION` |
+
+Reason codes are pinned in [`packages/shared-schemas/src/reason-codes.ts`](packages/shared-schemas/src/reason-codes.ts) — schema-validated end-to-end so the dashboard can render the exact same string the policy emitted.
+
+### Two-layer model
+
+```
+┌──────────────────────────────────┐
+│  Layer 1 — decider-time (ours)   │   evaluate(ctx) → { ok, reasonCode? }
+│  cli/policies/*.mjs              │   pure, async, runs BEFORE tx is built
+│  domain types (PolicyContext)    │
+└──────────────┬───────────────────┘
+               │  if ok: build + send tx
+               ↓
+┌──────────────────────────────────┐
+│  Layer 2 — sign-time (upstream)  │   check(ctx) → { allow, reason? }
+│  cli/cli/policies/*.mjs          │   pure, sync, runs AT signing
+│  tx-shaped types (RawTxContext)  │
+└──────────────────────────────────┘
+```
+
+Layer 1 prevents bad plans from being constructed. Layer 2 prevents a malicious or buggy plan from being signed even if layer 1 was bypassed. Both must pass; they share no contracts. This is enforced by the test suite ([`cli/tests/qm-policies.test.mjs`](cli/tests/qm-policies.test.mjs) — see "two-layer architecture regression guard").
+
+### Why this is the moat
+
+A daemon that watches balances and tops them up is a weekend project. The defensible thing is the policy framework: locked reason codes, a two-layer model, an evaluator contract that's pure-functional and async, and a registration step that's one line. Five policies ship in v1 because that's what the canonical demo needs. The next ten — domain-specific things like *time-of-day caps*, *per-counterparty drift detectors*, *stablecoin-only sources* — are small. The framework is the contribution; the policies in v1 are the existence proof.
+
+## Quick start (run your own)
+
+**Prerequisites:**
+- Node ≥ 22 (LTS recommended)
+- pnpm 9.15.5+ (activated via corepack: `corepack enable`)
+- A Zerion API key — [developers.zerion.io](https://developers.zerion.io)
+- A funded Base mainnet wallet (≥ $5 USDC + ~$0.01 ETH for gas) for the principal — **never your main wallet**
+
+**Steps:**
 
 ```bash
-# 1. Clone, install, configure
+# 1. Clone + install
 git clone https://github.com/winsznx/quartermaster.git
 cd quartermaster
 pnpm install
-cp .env.example .env             # fill in ZERION_API_KEY, WALLET_PRIVATE_KEY, etc.
 
-# 2. Run the daemon (Phase 4 — not yet shipped)
-zerion qm run                    # listens on http://127.0.0.1:7402
+# 2. Configure secrets — copy the example, then fill in ZERION_API_KEY +
+#    WALLET_PRIVATE_KEY (a fresh key for the principal). Never commit .env.local.
+cp .env.example .env.local
+$EDITOR .env.local
 
-# 3. Run the dashboard against it
-pnpm dev:dashboard               # localhost:3001 → polls 127.0.0.1:7402 by default
+# 3. Bootstrap the keystore + agent tokens + fleet. Walks you through:
+#    - import principal, create alpha-1/2/3 subordinates
+#    - mint scoped agent tokens for each
+#    - register the fleet in ~/.zerion/quartermaster/fleet.json
+#    - register the principal as a treasury source
+#    Full step-by-step (with screenshots) in:
+open cli/BOOTSTRAP.md
+
+# 4. Run the daemon (binds 127.0.0.1:7402, broadcasts SSE state)
+node cli/cli/zerion.js qm run
+
+# 5. In a second terminal, open the dashboard against your daemon
+pnpm dev:dashboard
+# → http://localhost:3001 (polls 127.0.0.1:7402 by default)
 ```
 
 Self-hosters never set `NEXT_PUBLIC_DAEMON_URL` — the default points at localhost.
+
+To reproduce the README §26.4 evidence end-to-end on your own funded wallets, see [`cli/BOOTSTRAP.md` § "Phase 7a re-run"](cli/BOOTSTRAP.md#phase-7a-re-run--one-shot-driver) — `QM_KEYSTORE_PASSPHRASE='...' node scripts/run-phase7a.mjs` runs the full canonical narrative in ~9 minutes.
+
+## Architecture decisions
+
+These choices are locked. Each has a rationale entry; deep readers should follow the link.
+
+| Decision | Rationale |
+|---|---|
+| Files over a database (`ledger.jsonl`, `fleet.json`) | Reviewable via `cat`, atomic appends, no deploy story. [PRD §5.3](MASTER_PRD.md) |
+| Subprocess to forked Zerion CLI (not module import) | Clean trust boundary, easy upstream upgrade, CLI-as-stable-interface. [PRD §5.3](MASTER_PRD.md) |
+| Two-layer policy split | Layer 1 (decider-time) for planning; layer 2 (sign-time) at the wallet. Defense in depth. [PRD §8.0](MASTER_PRD.md) |
+| Locked reason codes (zod-pinned) | Dashboard renders exactly what the policy emits — no string drift. [shared-schemas](packages/shared-schemas/src/reason-codes.ts) |
+| Hono on `127.0.0.1:7402` (not `0.0.0.0`) | Daemon never exposes itself to the network. [PRD §22.3](MASTER_PRD.md) |
+| EWMA over rolling-mean for burn rate | α=0.30 (~2h half-life) catches sustained-shift faster, ignores one-shot blips. [`cli/lib/qm/ewma.js`](cli/lib/qm/ewma.js) |
+| Base mainnet for the demo, not Sepolia | Zerion API does not index Base Sepolia. [DEVIATIONS](docs-verified/DEVIATIONS.md) |
+
+## Contributing — write your own policy
+
+A policy is a single file. Drop it at [`cli/policies/your-policy.mjs`](cli/policies):
+
+```js
+// cli/policies/your-policy.mjs
+import {
+  passResult,
+  PolicyContext,
+  REASON_CODES,
+  rejectResult,
+} from "@quartermaster/shared-schemas";
+
+export const policyName = "your-policy";
+export const policyVersion = "1.0.0";
+
+export async function evaluate(context) {
+  const parsed = PolicyContext.safeParse(context);
+  if (!parsed.success) {
+    return rejectResult(
+      REASON_CODES.MALFORMED_CONTEXT,
+      `your-policy: malformed PolicyContext (${parsed.error.issues.length} issue(s))`,
+    );
+  }
+  const ctx = parsed.data;
+
+  // Your logic. Return rejectResult(reasonCode, reasonText) on fail,
+  // passResult() on pass. Both layered onto PolicyResult.
+  if (/* your reject condition */) {
+    return rejectResult(
+      REASON_CODES.YOUR_NEW_REASON_CODE,
+      `your-policy: rejected because <specific reason> (with numbers)`,
+    );
+  }
+
+  return passResult();
+}
+```
+
+Then register it in [`cli/lib/qm/run-policies.js`](cli/lib/qm/run-policies.js):
+
+```diff
+ import * as allowlist from "../../policies/allowlist.mjs";
+ import * as maxPerActionCap from "../../policies/max-per-action-cap.mjs";
+ import * as cooldownWindow from "../../policies/cooldown-window.mjs";
+ import * as burnRateOracle from "../../policies/burn-rate-oracle.mjs";
+ import * as yieldCurvePreservation from "../../policies/yield-curve-preservation.mjs";
++import * as yourPolicy from "../../policies/your-policy.mjs";
+
+ const REGISTRY = [
+   { module: allowlist },
+   { module: maxPerActionCap },
+   { module: cooldownWindow },
+   { module: burnRateOracle },
+   { module: yieldCurvePreservation },
++  { module: yourPolicy },
+ ];
+```
+
+Add a new reason code in [`packages/shared-schemas/src/reason-codes.ts`](packages/shared-schemas/src/reason-codes.ts) (the zod enum is the single source of truth — dashboard reads it via the same package).
+
+Add a test at `cli/tests/qm-policies.test.mjs` covering the 5 mandatory cases per PRD §25.2: known-good context, boundary at threshold, just-over threshold, extreme anomalous, malformed context. Existing tests in that file are the template.
+
+Run `pnpm --filter ./cli test` — the new policy joins the dispatcher automatically and the existing two-layer regression guard verifies it doesn't break the layer-1 contract.
 
 ## Layout
 
 ```
 quartermaster/
-├── MASTER_PRD.md          # source of truth — read first
-├── FRONTEND_BRIEF.md      # FE-specific scope, distilled from PRD
-├── AGENT_PROGRESS.md      # session-to-session handoff log (PRD §28)
-├── gap.md                 # gaps the FE dev finds against PRD/brief
-├── docs-verified/         # frozen upstream doc snapshots + DEVIATIONS.md
+├── README.md             # this file
+├── MASTER_PRD.md         # source of truth — design + scope
+├── AGENT_PROGRESS.md     # session-to-session handoff log (PRD §28)
+├── docs-verified/        # frozen upstream doc snapshots + DEVIATIONS.md
 ├── apps/
-│   ├── landing/           # public marketing site → Vercel project A
-│   └── dashboard/         # public demo UI → Vercel project B
+│   ├── landing/          # public marketing site → Vercel project A
+│   └── dashboard/        # public demo UI → Vercel project B
 ├── packages/
-│   └── shared-schemas/    # zod schemas — daemon ⇄ dashboard contract
-├── cli/                   # forked zerion-ai + qm daemon → Railway (Phase 1, 4)
-└── scripts/               # demo-setup, verify-docs, seed-testnet
+│   └── shared-schemas/   # zod schemas — daemon ⇄ dashboard contract
+├── cli/                  # forked Zerion CLI + qm daemon
+│   ├── policies/         # layer-1 policy modules (the framework)
+│   ├── commands/qm/      # qm subcommands (run, plan, test, reconcile, …)
+│   ├── lib/qm/           # daemon internals: watcher, decider, executor, …
+│   ├── tests/            # node --test runner; qm-* + upstream tests
+│   ├── BOOTSTRAP.md      # operator setup walkthrough
+│   └── ...
+└── scripts/
+    └── run-phase7a.mjs   # one-shot e2e driver for §26.4 reproduction
 ```
-
-## Documents
-
-| File                          | Audience                  | When to read                               |
-| ----------------------------- | ------------------------- | ------------------------------------------ |
-| `MASTER_PRD.md`               | everyone                  | source of truth for product spec           |
-| `FRONTEND_BRIEF.md`           | frontend dev              | start here; reach for PRD when needed      |
-| `HANDOFF.md`                  | repo owner                | the init steps that got us here            |
-| `AGENT_PROGRESS.md`           | next agent / next session | what was done, what's blocked, what's next |
-| `gap.md`                      | frontend dev → repo owner | every gap or ambiguity hit during build    |
-| `docs-verified/DEVIATIONS.md` | everyone                  | architectural pivots and doc-verification drift |
-
-## Toolchain
-
-- Node ≥22 (Day 0 verification target: 22.x LTS; `engines.node` set accordingly)
-- pnpm `9.15.5` (activated via corepack from the `packageManager` field)
-- Next 16.2.4, React 19.2.4, Tailwind v4, shadcn (base-nova style), Recharts 3, Lucide
-
-See `docs-verified/DEVIATIONS.md` for any drift from PRD §21.2 pinned versions.
 
 ## §26.4 Live demo — Base mainnet transactions
 
@@ -214,6 +377,15 @@ A bug in the executor's `pickTxHash` (now fixed) produced three orphan top-up pl
 
 The full ledger (`ledger.jsonl`) contains the `topup_planned` → `daemon_halt` → `reconcile_resolved` event chain for those three actions, plus the clean `topup_planned` → `topup_send_pending` → `topup_send_confirmed` → `topup_confirmed` chain for the two real top-ups.
 
-## License
 
-MIT — see `LICENSE`.
+## License & acknowledgments
+
+MIT — see [`LICENSE`](LICENSE).
+
+Built on:
+- **[Zerion CLI](https://github.com/zeriontech/zerion-ai)** — the execution layer. Every swap, bridge, and send is a `node cli/cli/zerion.js <cmd>` subprocess (npx-resolved against the local fork, not the published package — see Phase 4.6 `pickTxHash` notes in [DEVIATIONS](docs-verified/DEVIATIONS.md)). Forked at PR #5 (`c39fb6d`). Sanctioned upstream-touches are fenced QM blocks documented in DEVIATIONS.
+- **[x402](https://x402.org)** — Coinbase's pay-per-call HTTP standard. The protocol that made this product necessary.
+- **[viem](https://viem.sh)** — for the on-chain reads (gas seeding, balance probes) that bypass the agent token's `deny-transfers` policy by design.
+- **[Hono](https://hono.dev)**, **[zod](https://zod.dev)**, **[Next.js](https://nextjs.org)**, **[Tailwind v4](https://tailwindcss.com)**, **[Recharts](https://recharts.org)**, **[Lucide](https://lucide.dev)**, **[asciinema-player](https://github.com/asciinema/asciinema-player)** (CDN, vanilla JS — no React wrapper).
+
+Submitted to the [Colosseum Frontier Hackathon](https://www.colosseum.com/frontier), Zerion CLI track.

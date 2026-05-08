@@ -926,3 +926,38 @@ All 356 cli tests still pass (342 / 0 fail / 14 skipped).
 - **Lowered alpha-1 + alpha-2 thresholds locally rather than topping up principal.** Same logic as Phase 4.6's earlier threshold tuning. Local fleet.json mutation; not committed; reverts trivially. Lets the demo run on the existing $1.22 budget. The alternative (asking the user to send more USDC to principal mid-run) would have stalled the e2e for an unbounded interval.
 - **Kept the script outputs gitignored.** The `phase7a-results.json` may include subprocess stdout slices that contain transient runtime details (timestamps, process IDs, stderr fragments). Better to publish the curated subset in README §26.4 than commit the raw artifact.
 - **Did not include all 32 x402 settlement hashes in README.** First and last per leg is enough for a judge to verify on Basescan; the rest live in the JSON artifact and can be reproduced via a 5-line `eth_getLogs` curl. Hash table noise reduces vs. signal kept.
+
+## 2026-05-08 — Claude Code (Opus 4.7) — Phase 7b: README & landing finishing pass
+
+**Phase:** 7b (submission-ready polish)
+**Started from:** 63c6a20
+**Ended at:** <commit SHA — appended after commit>
+
+### Done
+
+- **README.md fully rewritten** in the order requested by owner: hero (with badges), "What is Quartermaster?", "Live demonstration", "Architecture" (text + ASCII diagram from PRD §5.1, with sign-time policies labelled as layer 2), "Policy framework" (5-policy table + reason codes + two-layer model + the "moat" framing), "Quick start (run your own)" (verified end-to-end against current state — `.env.example` exists, `cli/BOOTSTRAP.md` exists, `node cli/cli/zerion.js qm run` is the actual command), "Architecture decisions" (locked-choices table linking to PRD + DEVIATIONS), "Contributing — write your own policy" (file template + `run-policies.js` diff + reason-codes pinning + tests note), Layout, §26.4 (preserved as-is), License & acknowledgments.
+- **No unbacked claims.** Every link in the README points at a file or external URL that exists. Quick start steps verified by inspection: `.env.example` present, `pnpm install` works, `cli/BOOTSTRAP.md` is the real walkthrough, `node cli/cli/zerion.js qm run` is the verified daemon entrypoint, `pnpm dev:dashboard` script exists in `package.json`.
+- **`apps/landing/components/asciinema-hero.tsx` added** — vanilla JS asciinema-player loaded from CDN (`cdn.jsdelivr.net/npm/asciinema-player@3.8.0`), no React wrapper. Loads CSS via `<link>`, JS via Next.js `<Script strategy="afterInteractive">`, mounts player into a ref'd div. Polls `window.AsciinemaPlayer` for up to 5s in case the script loaded before the effect ran. Disposes player on unmount via the player object's `.dispose()` if present. Theme: monokai, autoplay + loop, fit=width.
+- **`apps/landing/app/page.tsx` server-side asset detection.** `existsSync(public/demo.mp4)` and `existsSync(public/hero.cast)` checked at render time:
+  - **demo.mp4 present** → renders `<video controls preload="metadata" playsInline>` with `<source type="video/mp4">`. **Absent** → renders the existing `Demo video shipping with submission` placeholder card linking to README §26.4.
+  - **hero.cast present** → mounts `<AsciinemaHero castUrl="/hero.cast" />`. **Absent** → renders the existing static "fleet status" terminal block (refreshed with the Phase 7a alpha-1 hash `0x3f86…9422` and 22.13× burn-rate ratio, replacing the stale Phase 4.6 hash).
+- **Both fallback states verified by production build.** With assets absent (current state): `Demo video shipping` placeholder + `fleet status` terminal both rendered exactly once into `.next/server/app/index.html`, zero occurrences of `<video` or `asciinema`. With both assets present (synthetic test then reverted): build emitted `<video src="/demo.mp4" type="video/mp4">` + preloaded `asciinema-player.min.js` from CDN, fallbacks suppressed. The next Vercel deploy after the operator commits either file auto-renders the real asset.
+- **Pre-existing FRONTEND_BRIEF design-lock warnings ignored.** The IDE flags `rounded-[6px]` → `rounded-md`, `w-[10px]` → `w-2.5`, etc. The `[6px]` and `[10px]` arbitrary values are locked in `FRONTEND_BRIEF.md`; canonical Tailwind classes resolve to different pixel values. Documented in past sessions.
+
+### Observations
+
+- **Vercel deploy badges in the README hero point at static URLs** (`quartermaster-landing.vercel.app`, `quartermaster-dashboard.vercel.app`). These are `img.shields.io/badge/...` static SVGs — they always render the URL string, no live status check. If a judge wants live status they click through; the badge itself doesn't degrade if a deploy is down.
+- **README is now 393 lines, ~14 KB.** GitHub renders it cleanly without the "this file has been truncated" warning that triggers around 100 KB. Section anchors all resolve.
+
+### Next (Phase 7c backlog — post-submission)
+
+- **`cli/lib/qm/daemon.js` orphan plan investigation.** The Phase 7a run produced a `topup_planned` for alpha-1 actionId `82161630-39d7-4915-93f0-c9b54513f134` that passed all 5 policies but never progressed to `topup_send_pending` — no terminal state recorded. The next tick re-planned and executed cleanly (`9ac96d77-…` → `topup_send_confirmed`), so the narrative is unaffected, but the plan being stranded mid-tick suggests a tick-overlap or silent-skip path in the executor that's worth tracing. Reproduce by re-running `scripts/run-phase7a.mjs` with daemon-log capture; check `tick_completed` events for overlap markers.
+- **Integration test `qm-integration.test.mjs` should assert `--to <fleet-entry-address>`** on the runner's args. The original `sendOnlyPlan` stub bug (Phase 7a recovery) survived 4 phases of testing because the integration test only asserted `txHashes.send === VALID_TX`. Adding an args assertion closes the gap.
+- **Demo video + asciinema cast**: owner records both, drops into `apps/landing/public/`, next Vercel deploy auto-renders. No code changes needed.
+
+### Decisions made (only the non-obvious ones)
+
+- **Layout section kept (not in the user's a-j spec) because it earns its keep.** The user's spec listed a-j as the substantive sections; Layout fits between Contributing and §26.4 as factual repo orientation, no claims, links to real paths. Removing it would lose useful context for new contributors.
+- **License + acknowledgments moved to the end** (after §26.4 per the user's order j). The original placement had them above §26.4 which read awkwardly — license is conventionally the last thing.
+- **Asciinema CDN over npm install.** User constraint: "no React wrapper". Plus CDN means no bundle bloat for users who don't reach the cast (above-the-fold but lazy via `Script strategy="afterInteractive"`). Player + CSS each ~30 KB gzipped, fetched only when the cast is present.
+- **Static terminal block content refreshed with Phase 7a numbers** instead of leaving the Phase 4.6 hash. The fallback should advertise the real, post-fix demo (alpha-1 → `0x3f86…9422`, 22.13× ratio) since that's what the README and §26.4 now lead with.

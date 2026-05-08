@@ -1,4 +1,9 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import { Activity, CircleDollarSign, PlayCircle, Shield, Timer, TrendingDown } from "lucide-react";
+
+import { AsciinemaHero } from "@/components/asciinema-hero";
 
 // Motion budget per FRONTEND_BRIEF: 160ms transitions, no parallax, no
 // auto-playing animations. The earlier framer-motion implementation
@@ -6,9 +11,21 @@ import { Activity, CircleDollarSign, PlayCircle, Shield, Timer, TrendingDown } f
 // violated all three. This page renders the final state statically;
 // any per-element transitions live in CSS via Tailwind's `transition-*`
 // utilities and never exceed 160ms.
+//
+// Phase 7b graceful asset fallbacks: the hero terminal swaps to an
+// asciinema-player embed iff `public/hero.cast` is committed; the demo
+// section swaps to a <video> iff `public/demo.mp4` is committed. Both
+// checks run at build/render time on the server, so the next deploy after
+// the operator drops either file auto-renders the real asset.
+
+const PUBLIC_DIR = join(process.cwd(), "public");
+const HERO_CAST_PATH = join(PUBLIC_DIR, "hero.cast");
+const DEMO_VIDEO_PATH = join(PUBLIC_DIR, "demo.mp4");
 
 export default function LandingPage() {
   const headingWords = "Keep your agents solvent.".split(" ");
+  const hasHeroCast = existsSync(HERO_CAST_PATH);
+  const hasDemoVideo = existsSync(DEMO_VIDEO_PATH);
 
   return (
     <>
@@ -68,35 +85,39 @@ export default function LandingPage() {
           </div>
 
           <div className="w-[calc(100%+48px)] md:w-full flex items-center justify-center md:px-4 overflow-hidden">
-            <div className="w-full max-w-[800px] min-h-[300px] md:min-h-[460px] bg-[#0B0D0E] border border-border-strong rounded-[8px] shadow-[0_24px_64px_rgba(0,0,0,0.4)] overflow-hidden flex flex-col font-mono text-[8.5px] sm:text-[12px] md:text-[14px] leading-relaxed text-left">
-              <div className="bg-surface-2 px-3 py-2 md:px-4 md:py-3 border-b border-border-strong flex items-center relative">
-                <div className="flex gap-2">
-                  <div className="w-[10px] h-[10px] md:w-[12px] md:h-[12px] rounded-full bg-[#ED6A5E]" />
-                  <div className="w-[10px] h-[10px] md:w-[12px] md:h-[12px] rounded-full bg-[#F4BF4F]" />
-                  <div className="w-[10px] h-[10px] md:w-[12px] md:h-[12px] rounded-full bg-[#61C554]" />
+            {hasHeroCast ? (
+              <AsciinemaHero castUrl="/hero.cast" />
+            ) : (
+              <div className="w-full max-w-[800px] min-h-[300px] md:min-h-[460px] bg-[#0B0D0E] border border-border-strong rounded-[8px] shadow-[0_24px_64px_rgba(0,0,0,0.4)] overflow-hidden flex flex-col font-mono text-[8.5px] sm:text-[12px] md:text-[14px] leading-relaxed text-left">
+                <div className="bg-surface-2 px-3 py-2 md:px-4 md:py-3 border-b border-border-strong flex items-center relative">
+                  <div className="flex gap-2">
+                    <div className="w-[10px] h-[10px] md:w-[12px] md:h-[12px] rounded-full bg-[#ED6A5E]" />
+                    <div className="w-[10px] h-[10px] md:w-[12px] md:h-[12px] rounded-full bg-[#F4BF4F]" />
+                    <div className="w-[10px] h-[10px] md:w-[12px] md:h-[12px] rounded-full bg-[#61C554]" />
+                  </div>
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-text-muted text-[9px] md:text-[13px]">
+                    zerion — fleet status
+                  </div>
                 </div>
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-text-muted text-[9px] md:text-[13px]">
-                  zerion — fleet status
+                <div className="p-3 md:p-10 text-text-primary whitespace-pre overflow-x-auto flex-1 flex flex-col justify-center">
+                  <div className="inline-block text-left min-w-fit">
+                    <div><span className="text-accent">$</span> zerion fleet status</div>
+                    <div><br/></div>
+                    <div className="text-text-muted">  WALLET                 BALANCE        BURN/H        RUNWAY</div>
+                    <div className="text-border-strong">  ──────────────────────────────────────────────────────────</div>
+                    <div>  alpha-1                $0.020         0.036         <span className="text-warning">0.4h ⚠</span></div>
+                    <div>  alpha-2                $0.003         0.039         <span className="text-warning">0.1h ⚠</span></div>
+                    <div>  alpha-3                $0.300         0.000         <span className="text-success">∞ ✓</span></div>
+                    <div><br/></div>
+                    <div className="text-warning">  → alpha-2 burn 22.13× the 7d baseline</div>
+                    <div className="text-danger">  → BLOCKED by burn-rate-oracle: BURN_RATE_ANOMALY_DETECTED</div>
+                    <div className="text-success">  ✓ topup_confirmed — 0x3f86…9422 (alpha-1, Base mainnet)</div>
+                    <div><br/></div>
+                    <div>$ <span className="opacity-60">_</span></div>
+                  </div>
                 </div>
               </div>
-              <div className="p-3 md:p-10 text-text-primary whitespace-pre overflow-x-auto flex-1 flex flex-col justify-center">
-                <div className="inline-block text-left min-w-fit">
-                  <div><span className="text-accent">$</span> zerion fleet status</div>
-                  <div><br/></div>
-                  <div className="text-text-muted">  WALLET                 BALANCE        BURN/H        RUNWAY</div>
-                  <div className="text-border-strong">  ──────────────────────────────────────────────────────────</div>
-                  <div>  alpha-1                $0.22          0.014         <span className="text-warning">15h ⚠</span></div>
-                  <div>  alpha-2                $0.13          0.017         <span className="text-warning">8h ⚠</span></div>
-                  <div>  alpha-3                $0.30          0.000         <span className="text-success">∞ ✓</span></div>
-                  <div><br/></div>
-                  <div className="text-warning">  → alpha-2 burn 16.79× the 7d baseline</div>
-                  <div className="text-danger">  → BLOCKED by burn-rate-oracle: BURN_RATE_ANOMALY_DETECTED</div>
-                  <div className="text-success">  ✓ topup_confirmed — 0x8540cf09…517a (Base mainnet)</div>
-                  <div><br/></div>
-                  <div>$ <span className="opacity-60">_</span></div>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         </section>
 
@@ -267,24 +288,39 @@ export default function LandingPage() {
 
         <div className="section-divider">◆</div>
 
-        {/* Section 6 — Demo placeholder; recorded video lands here at submission time */}
+        {/* Section 6 — Demo. Server-side checks for public/demo.mp4; renders
+            <video> if present, placeholder card otherwise. The next deploy
+            after the operator commits demo.mp4 auto-renders the video. */}
         <section id="demo" className="py-[64px] px-[48px] max-w-[1100px] mx-auto">
           <h2 className="font-sans text-[28px] font-medium mb-[32px] text-center text-text-primary">See It Run</h2>
           <div className="w-full max-w-[900px] mx-auto aspect-video bg-surface-1 border border-border-subtle rounded-[6px] overflow-hidden flex items-center justify-center relative shadow-lg">
-            <div className="absolute inset-0 bg-[#0B0D0E] flex flex-col items-center justify-center text-center px-6">
-              <PlayCircle size={64} strokeWidth={1} className="text-accent mb-5 opacity-80" />
-              <p className="text-text-primary text-base font-medium mb-2">Demo video lands at submission</p>
-              <p className="text-text-secondary text-sm max-w-md mb-6">
-                Until then, the proof is on Base mainnet. Every transaction that drove the daemon
-                during build is linked from the README.
-              </p>
-              <a
-                href="https://github.com/winsznx/quartermaster#264-live-demo--base-mainnet-transactions"
-                className="inline-block bg-accent text-text-inverse px-6 py-2.5 rounded-[6px] font-medium hover:bg-accent-hover transition-colors duration-150 text-sm"
+            {hasDemoVideo ? (
+              <video
+                className="w-full h-full object-cover"
+                controls
+                preload="metadata"
+                playsInline
+                aria-label="Quartermaster demo video"
               >
-                See on-chain hashes →
-              </a>
-            </div>
+                <source src="/demo.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
+            ) : (
+              <div className="absolute inset-0 bg-[#0B0D0E] flex flex-col items-center justify-center text-center px-6">
+                <PlayCircle size={64} strokeWidth={1} className="text-accent mb-5 opacity-80" />
+                <p className="text-text-primary text-base font-medium mb-2">Demo video shipping with submission</p>
+                <p className="text-text-secondary text-sm max-w-md mb-6">
+                  Until then, the proof is on Base mainnet. Every transaction that drove the daemon
+                  during build is linked from the README.
+                </p>
+                <a
+                  href="https://github.com/winsznx/quartermaster#264-live-demo--base-mainnet-transactions"
+                  className="inline-block bg-accent text-text-inverse px-6 py-2.5 rounded-[6px] font-medium hover:bg-accent-hover transition-colors duration-150 text-sm"
+                >
+                  See on-chain hashes →
+                </a>
+              </div>
+            )}
           </div>
         </section>
       </main>

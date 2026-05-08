@@ -100,26 +100,44 @@ See `docs-verified/DEVIATIONS.md` for any drift from PRD §21.2 pinned versions.
 
 Quartermaster was tested on Base mainnet during build. The first run (Phase 4.6) revealed a stub destination in the simple-send code path; the second run (Phase 7a), post-fix, demonstrates the complete loop. **Both are documented here.** Click any hash to verify on Basescan.
 
-### Phase 7a — canonical x402 demonstration (current)
+### Phase 7a — canonical x402 demonstration (post-fix)
 
-Subordinate `alpha-1` paid the x402 facilitator (`0xd07c06a650a88bbcf4f0c4fbf2c6c08c9a60acc6`) for real Zerion `analyze --x402` calls on Base mainnet. Each settlement is a real USDC Transfer event from alpha-1's wallet to the facilitator at the published per-call price ($0.01 USDC). Together they drained $0.08 USDC from alpha-1 in a 10-second window, providing the watcher's burn signal for the policy stack.
+Driven end-to-end via [scripts/run-phase7a.mjs](scripts/run-phase7a.mjs) on Base mainnet. The full loop closes: subordinates pay the x402 facilitator for real Zerion API calls, the daemon's watcher reads the resulting balance drops, the policy stack rejects burn-rate anomalies and approves once the EWMA decays, and the executor sends from `principal` to the **correct subordinate address** (proves the [`sendOnlyPlan` fix](cli/lib/qm/daemon.js#L342-L364)).
 
-**Subordinate (alpha-1) `0xc01a20033523086467CC96ea42c27C99e4fE243f` → x402 facilitator:**
+#### Post-fix top-ups — destination verified on-chain
 
-| # | block | tx hash |
+| target | actionId | amount | tx hash | recipient |
+|---|---|---|---|---|
+| alpha-1 | `9ac96d77-85ed-43ff-bf30-52ee70f24d1e` | 0.010194 USDC | [`0x3f86196721dbea55b50b971a97a28652af81d86864bf14f32a226d0ee4ac9422`](https://basescan.org/tx/0x3f86196721dbea55b50b971a97a28652af81d86864bf14f32a226d0ee4ac9422) | `0xc01a…243f` ✓ |
+| alpha-2 | `bbb3cfc3-b4b3-4daf-948f-d87710610266` | 0.010072 USDC | [`0x0316d64bae20f3bc96599433d6ef0069514c449f6754605ad5e3ba7b74738b7c`](https://basescan.org/tx/0x0316d64bae20f3bc96599433d6ef0069514c449f6754605ad5e3ba7b74738b7c) | `0x551a…1c50` ✓ |
+
+Each followed `topup_planned` → `topup_send_pending` → `topup_send_confirmed` → `topup_confirmed`. Both txs decode to `Transfer(USDC, principal=0x50b1…, recipient, amount)` where the recipient matches the fleet entry — not the `0xcccc…cccc` sink that Phase 4.6 hit.
+
+#### Burn-rate-oracle blocks — four anomalies refused
+
+| target | actionId | reasonText |
 |---|---|---|
-| 1 | 45699435 | [`0xd62f09b791733141105f5ba6f10ee4feb0154582173b552942cb5adb6f9241dd`](https://basescan.org/tx/0xd62f09b791733141105f5ba6f10ee4feb0154582173b552942cb5adb6f9241dd) |
-| 2 | 45699436 | [`0x8bdf9bef142506eba9eb1cce6284d9f11911519ccfe4b93c3dd093a914e2f3d2`](https://basescan.org/tx/0x8bdf9bef142506eba9eb1cce6284d9f11911519ccfe4b93c3dd093a914e2f3d2) |
-| 3 | 45699436 | [`0xa4adea4be3fd8bb29df6fbe6d16b59ee39d42867676ff5b6b9a7eb6fd6528d10`](https://basescan.org/tx/0xa4adea4be3fd8bb29df6fbe6d16b59ee39d42867676ff5b6b9a7eb6fd6528d10) |
-| 4 | 45699436 | [`0x2c4315f407ac43bfeb57576cb2aea70e1264b5df84b1a54684986c716439c279`](https://basescan.org/tx/0x2c4315f407ac43bfeb57576cb2aea70e1264b5df84b1a54684986c716439c279) |
-| 5 | 45699439 | [`0x79f7833868138ee22274548df2d342f4f8f70433aad79119d96369867c3beda2`](https://basescan.org/tx/0x79f7833868138ee22274548df2d342f4f8f70433aad79119d96369867c3beda2) |
-| 6 | 45699439 | [`0x7d1a4659211bf2a8e0e51764560253fe927764aa1b3026abe0734237255617a6`](https://basescan.org/tx/0x7d1a4659211bf2a8e0e51764560253fe927764aa1b3026abe0734237255617a6) |
-| 7 | 45699440 | [`0xf213cad4f97108fed7e31b38e22066c64ecbdd8424d8f45439b0ce6e0bfd2a0c`](https://basescan.org/tx/0xf213cad4f97108fed7e31b38e22066c64ecbdd8424d8f45439b0ce6e0bfd2a0c) |
-| 8 | 45699440 | [`0xada5b5e53323398e56b79a7a9998927213d66ed7895dbc5ff7f50f78c459bbbb`](https://basescan.org/tx/0xada5b5e53323398e56b79a7a9998927213d66ed7895dbc5ff7f50f78c459bbbb) |
+| alpha-1 | `63dc2fa3-3ccb-4fcc-8e14-3b853b15bf9c` | recent hourly burn 0.0364 is **12.44× the 7d baseline 0.0029** (threshold 10×) |
+| alpha-2 | `c42e1a0d-1ba9-4bff-a478-cade6e11d288` | recent hourly burn 0.0391 is **22.13× the 7d baseline 0.0018** (threshold 10×) |
+| alpha-2 | `8c8f6b8a-2f89-4b15-a9f3-0104ea30e7b9` | recent hourly burn 0.0274 is **15.49× the 7d baseline 0.0018** (threshold 10×) |
+| alpha-2 | `0b732e77-331d-4363-af15-fae2dd8597f6` | recent hourly burn 0.0191 is **10.84× the 7d baseline 0.0018** (threshold 10×) |
 
-The full Phase 7a e2e (subordinate burn → daemon detects → top-up succeeds, then spike burn → daemon plans → policy blocks with `BURN_RATE_ANOMALY_DETECTED`) re-runs against the post-fix `sendOnlyPlan` and is operator-driven — see `cli/BOOTSTRAP.md` §"Phase 7a re-run" for the exact command sequence. Hashes will be appended here once the operator drives it.
+All four are `topup_planned` + `topup_blocked` event pairs in `ledger.jsonl` with the full `policyChecks[]` array. The dashboard's `/actions/[id]` route renders these via `ShieldAlert`. The cascade on alpha-2 (22.13× → 15.49× → 10.84×) is the EWMA decay over three consecutive ticks; once the ratio dropped below 10× (tick 4), the same target's next plan passed and executed.
 
-The `qm test x402-burn --wallet=<id>` command is the canonical narrative driver — every iteration spawns `node cli/cli/zerion.js analyze <target> --x402` with the subordinate's derived EVM key set as `WALLET_PRIVATE_KEY`, settling each call as a real Base mainnet USDC transfer to the x402 facilitator. No mocks, no fixtures, no synthetic samples.
+#### x402 settlements — agents paying for real API calls
+
+Subordinates pay [the Zerion x402 facilitator](https://basescan.org/address/0xd07c06a650a88bbcf4f0c4fbf2c6c08c9a60acc6) per `analyze --x402` call. Each call settles as multiple USDC Transfer events at $0.01 each (provider + protocol split). 32 settlements captured this run; first and last shown per leg, full set in [scripts/phase7a-results.json](scripts/phase7a-results.json).
+
+| leg | wallet | calls | settlements | first hash | last hash |
+|---|---|---|---|---|---|
+| alpha-1 burn (rate=2/min, 180s) | `0xc01a…243f` | 6 | 19 | [`0x8a11211f74…f13d`](https://basescan.org/tx/0x8a11211f74f07330da69032bb5a8d53020f0e57f65b2e517939e3222b516f13d) | [`0x9b7d9df896…c845c`](https://basescan.org/tx/0x9b7d9df896c35febabe157c2075373a6b6831b76534006aafd8bfd72153c845c) |
+| alpha-2 spike (rate=30/min, 60s) | `0x551a…1c50` | 13 | 13 | [`0xc12e07fa8a…cbe2`](https://basescan.org/tx/0xc12e07fa8a602a75c6ee0cd0015f94d65f185fa671e98d923b525a3bfa5ecbe2) | [`0xd20287e6c0…6d4f`](https://basescan.org/tx/0xd20287e6c0835681e92fbfe6fede7e4940e042322444fe0df009b903d2696d4f) |
+
+The `qm test x402-burn --wallet=<id>` command is the canonical narrative driver — each iteration spawns `analyze <target> --x402` with the subordinate's derived EVM key as `WALLET_PRIVATE_KEY`, settling on-chain. No mocks, no fixtures, no synthetic samples. The full one-shot e2e is reproducible via:
+
+```bash
+QM_KEYSTORE_PASSPHRASE='...' node scripts/run-phase7a.mjs
+```
 
 ### Phase 4.6 — initial daemon validation (build process)
 

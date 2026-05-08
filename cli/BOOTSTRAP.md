@@ -212,50 +212,37 @@ The agent will then:
 
 ---
 
-## Phase 7a re-run — operator-driven
+## Phase 7a re-run — one-shot driver
 
-The Phase 7a hash table in README §26.4 has 8 confirmed x402 settlements (alpha-1 → facilitator). The full e2e (subordinate burn → daemon detects → top-up succeeds, then spike burn → policy blocks) needs the operator to drive it once because `qm test x402-burn` exports the subordinate's mnemonic from the keystore, which requires the keystore passphrase.
+Reproducing the README §26.4 Phase 7a evidence is one command. The driver script handles daemon lifecycle, both x402-burn legs, ledger polling for top-up/block resolution, on-chain settlement scraping, and writes a results JSON.
 
-**Why operator-driven:** `cli/commands/qm/test-x402-burn.js` calls `exportWallet(walletId, QM_KEYSTORE_PASSPHRASE)` to derive the subordinate's EVM key. The passphrase is never written to disk or env. It must come from the operator at command time.
+**Prerequisites** (same as full bootstrap above):
+- keystore + agent tokens + fleet registered (steps 1–6)
+- daemon NOT already running
+- `principal` ≥ $1 USDC + ~$0.0002 ETH gas
+- Each subordinate ≥ $0.10 USDC + a tiny bit of ETH
+- `QM_KEYSTORE_PASSPHRASE` available — wherever you stored the bootstrap passphrase
 
-**Prerequisites:** keystore + agent tokens + fleet already set up (steps 1–6 above). Daemon stopped. `principal` has ≥ $1 USDC + ~$0.10 of native ETH for gas. Each subordinate has whatever USDC budget the e2e needs (alpha-1 needs ≥ $0.10 for the modest burn; alpha-2 needs ≥ $0.20 for the spike).
-
-**Command sequence (run from repo root):**
+**Run:**
 
 ```bash
-# 1. Source the api key (.env.local) — the daemon's subprocess spawn picks it up too.
-set -a; . .env.local; set +a
-
-# 2. Set the keystore passphrase ONLY for this shell (no rc files, no .env files).
-read -s QM_KEYSTORE_PASSPHRASE && export QM_KEYSTORE_PASSPHRASE
-# (paste the passphrase you used during step 2 of bootstrap, hit enter)
-
-# 3. Start the daemon in the background. It reads the same passphrase via env.
-node cli/cli/zerion.js qm run > /tmp/qm-daemon.log 2>&1 &
-echo "daemon pid: $!"
-
-# 4. Drive alpha-1 through a normal burn (rate=2 calls/min, duration=180s → 6 calls × $0.01 = $0.06).
-node cli/cli/zerion.js qm test x402-burn --wallet=alpha-1 --rate=2 --duration=180
-
-# 5. Wait ~2 ticks for the daemon to detect alpha-1's runway crossing the threshold,
-#    plan a top-up, run the policy stack, and execute. Watch the daemon log:
-tail -f /tmp/qm-daemon.log
-# (Ctrl-C the tail once you see topup_send_confirmed; that hash is the new Phase 7a top-up.)
-
-# 6. Drive alpha-2 through a spike (rate=30 calls/min, duration=60s → up to 30 calls × $0.01 = $0.30).
-node cli/cli/zerion.js qm test x402-burn --wallet=alpha-2 --rate=30 --duration=60
-
-# 7. Wait ~1 tick for the daemon to plan the alpha-2 top-up. burn-rate-oracle should
-#    block with BURN_RATE_ANOMALY_DETECTED. Capture that block from the ledger:
-grep -E "BURN_RATE_ANOMALY|topup_send_confirmed" ~/.zerion/quartermaster/ledger.jsonl | tail -20
-
-# 8. Stop the daemon cleanly.
-kill %1
+QM_KEYSTORE_PASSPHRASE='<your passphrase>' node scripts/run-phase7a.mjs
 ```
 
-**What to capture for README §26.4:** the new `topup_send_confirmed` tx hash (alpha-1's real top-up, post-fix), the new `BURN_RATE_ANOMALY_DETECTED` actionId + reasonText (alpha-2 block), and the x402 settlement hashes already on-chain from steps 4 + 6 (read via `eth_getLogs` on USDC contract from each wallet's address).
+The script logs progress every minute. Total wall time ~9 minutes. When it returns:
+- `scripts/phase7a-results.json` has every captured event (top-up actionIds, block reasonTexts, settlement hashes)
+- `scripts/phase7a-daemon.log` has the daemon's full stdout/stderr for that run
+- daemon is stopped, lock cleared
 
-**Safety:** unset the passphrase before closing the shell so it doesn't leak into shell history saves: `unset QM_KEYSTORE_PASSPHRASE`.
+**Check results:**
+
+```bash
+jq '.legA_alpha1Burn.topUp.txHash, .legB_alpha2Spike.block.reasonText' scripts/phase7a-results.json
+```
+
+**If you need to re-run** (the script is idempotent except for the on-chain side-effects): make sure no `~/.zerion/quartermaster/.lock` lingers, principal is still funded, then re-invoke. Each run produces a fresh `phase7a-results.json` (overwrites prior).
+
+**Safety:** the script never logs the passphrase. The driver runs subprocesses with the env scoped to that subprocess only — it doesn't write the passphrase anywhere on disk. Once your shell session ends, the env var is gone.
 
 ---
 

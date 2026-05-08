@@ -14,6 +14,10 @@ out/
 .env.*
 !.env.example
 
+# Phase 7a one-shot driver outputs (operator pastes hashes into README manually).
+scripts/phase7a-results.json
+scripts/phase7a-daemon.log
+
 # Logs
 *.log
 npm-debug.log*

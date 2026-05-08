@@ -29,6 +29,7 @@ import { print, printError } from "../../cli/lib/util/output.js";
 
 import { buildSubprocessEnv } from "../../lib/qm/env.js";
 import { getWallet } from "../../lib/fleet/registry.js";
+import qmTestX402Burn from "./test-x402-burn.js";
 
 const ZERION_CLI = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -98,10 +99,14 @@ function pickTxHash(parsed) {
 export default async function qmTest(args, flags) {
   const [subcommand] = args;
 
+  if (subcommand === "x402-burn") {
+    return qmTestX402Burn(args.slice(1), flags);
+  }
+
   if (subcommand !== "spike") {
     printError(
       "unknown_subcommand",
-      `unknown qm test subcommand "${subcommand}". Available: spike`,
+      `unknown qm test subcommand "${subcommand}". Available: spike, x402-burn`,
     );
     process.exit(1);
   }

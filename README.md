@@ -98,11 +98,34 @@ See `docs-verified/DEVIATIONS.md` for any drift from PRD §21.2 pinned versions.
 
 ## §26.4 Live demo — Base mainnet transactions
 
-Quartermaster executed these transactions on **Base mainnet** during build. Click any hash to verify on Basescan. Every action below was driven by the daemon (or the bootstrap setup), not pre-recorded.
+Quartermaster was tested on Base mainnet during build. The first run (Phase 4.6) revealed a stub destination in the simple-send code path; the second run (Phase 7a), post-fix, demonstrates the complete loop. **Both are documented here.** Click any hash to verify on Basescan.
 
-> Phase 7 extends this table with x402-paid subordinate calls (each one a real on-chain USDC transfer routed through the x402 facilitator) once the watcher is wired to read x402 receipts as the burn signal. Today's burn loop uses direct USDC transfers, which proves the watcher → decider → policy → executor path on the same primitives.
+### Phase 7a — canonical x402 demonstration (current)
 
-### J1 — burn-rate-oracle refusal (the policy moment)
+Subordinate `alpha-1` paid the x402 facilitator (`0xd07c06a650a88bbcf4f0c4fbf2c6c08c9a60acc6`) for real Zerion `analyze --x402` calls on Base mainnet. Each settlement is a real USDC Transfer event from alpha-1's wallet to the facilitator at the published per-call price ($0.01 USDC). Together they drained $0.08 USDC from alpha-1 in a 10-second window, providing the watcher's burn signal for the policy stack.
+
+**Subordinate (alpha-1) `0xc01a20033523086467CC96ea42c27C99e4fE243f` → x402 facilitator:**
+
+| # | block | tx hash |
+|---|---|---|
+| 1 | 45699435 | [`0xd62f09b791733141105f5ba6f10ee4feb0154582173b552942cb5adb6f9241dd`](https://basescan.org/tx/0xd62f09b791733141105f5ba6f10ee4feb0154582173b552942cb5adb6f9241dd) |
+| 2 | 45699436 | [`0x8bdf9bef142506eba9eb1cce6284d9f11911519ccfe4b93c3dd093a914e2f3d2`](https://basescan.org/tx/0x8bdf9bef142506eba9eb1cce6284d9f11911519ccfe4b93c3dd093a914e2f3d2) |
+| 3 | 45699436 | [`0xa4adea4be3fd8bb29df6fbe6d16b59ee39d42867676ff5b6b9a7eb6fd6528d10`](https://basescan.org/tx/0xa4adea4be3fd8bb29df6fbe6d16b59ee39d42867676ff5b6b9a7eb6fd6528d10) |
+| 4 | 45699436 | [`0x2c4315f407ac43bfeb57576cb2aea70e1264b5df84b1a54684986c716439c279`](https://basescan.org/tx/0x2c4315f407ac43bfeb57576cb2aea70e1264b5df84b1a54684986c716439c279) |
+| 5 | 45699439 | [`0x79f7833868138ee22274548df2d342f4f8f70433aad79119d96369867c3beda2`](https://basescan.org/tx/0x79f7833868138ee22274548df2d342f4f8f70433aad79119d96369867c3beda2) |
+| 6 | 45699439 | [`0x7d1a4659211bf2a8e0e51764560253fe927764aa1b3026abe0734237255617a6`](https://basescan.org/tx/0x7d1a4659211bf2a8e0e51764560253fe927764aa1b3026abe0734237255617a6) |
+| 7 | 45699440 | [`0xf213cad4f97108fed7e31b38e22066c64ecbdd8424d8f45439b0ce6e0bfd2a0c`](https://basescan.org/tx/0xf213cad4f97108fed7e31b38e22066c64ecbdd8424d8f45439b0ce6e0bfd2a0c) |
+| 8 | 45699440 | [`0xada5b5e53323398e56b79a7a9998927213d66ed7895dbc5ff7f50f78c459bbbb`](https://basescan.org/tx/0xada5b5e53323398e56b79a7a9998927213d66ed7895dbc5ff7f50f78c459bbbb) |
+
+The full Phase 7a e2e (subordinate burn → daemon detects → top-up succeeds, then spike burn → daemon plans → policy blocks with `BURN_RATE_ANOMALY_DETECTED`) re-runs against the post-fix `sendOnlyPlan` and is operator-driven — see `cli/BOOTSTRAP.md` §"Phase 7a re-run" for the exact command sequence. Hashes will be appended here once the operator drives it.
+
+The `qm test x402-burn --wallet=<id>` command is the canonical narrative driver — every iteration spawns `node cli/cli/zerion.js analyze <target> --x402` with the subordinate's derived EVM key set as `WALLET_PRIVATE_KEY`, settling each call as a real Base mainnet USDC transfer to the x402 facilitator. No mocks, no fixtures, no synthetic samples.
+
+### Phase 4.6 — initial daemon validation (build process)
+
+These transactions exercise the watcher → decider → policy → executor path end-to-end. They are real, on-chain, and signed by the daemon. **The three "happy-path top-ups" below carry a bug annotation — read carefully.**
+
+#### J1 — burn-rate-oracle refusal (the policy moment)
 
 Two consecutive top-up plans for `alpha-2` were **blocked by `burn-rate-oracle`** with the locked reason code. No on-chain tx — refusal happens pre-construction. The full `policyChecks[]` array is in `ledger.jsonl` and renders on `/actions/[id]` via the dashboard's `ShieldAlert` block.
 
@@ -111,22 +134,23 @@ Two consecutive top-up plans for `alpha-2` were **blocked by `burn-rate-oracle`*
 | `b489f1d6-a2ef-4f15-b978-eabfb629fd3b` | `BURN_RATE_ANOMALY_DETECTED` | recent hourly burn 0.0167 is **16.79× the 7d baseline 0.0010** (threshold 10×) |
 | `949c5a71-f436-40f9-bc18-f4e8d3c36838` | `BURN_RATE_ANOMALY_DETECTED` | recent hourly burn 0.0117 is **11.76× the 7d baseline** (threshold 10×) |
 
-### Happy-path top-ups — daemon → on-chain
+#### Top-ups — daemon → on-chain (with bug annotation)
 
-Once alpha-2's burn rate decayed back inside the spike threshold, the next two ticks planned top-ups, all 5 layer-1 policies passed, and the executor sent USDC from `principal` to `alpha-2`:
+> ⚠ **Bug — sent to stub destination.** Phase 4.6 ran with a placeholder `sendTo` in `cli/lib/qm/daemon.js:sendOnlyPlan` (`"0x" + "c".repeat(40)`). The decider, policy stack, executor, and on-chain broadcast all worked correctly relative to the data they received — but the data was a placeholder. These three transactions sent $1.388 USDC of principal's budget to `0xcccccccccccccccccccccccccccccccccccccccc` instead of alpha-2. Discovered post-run during Phase 7a docs prep, fixed at `cli/lib/qm/daemon.js:342-364`, regression-guarded by `cli/tests/qm-no-stubs.test.mjs`. Re-demonstrated correctly in Phase 7a (above). See [DEVIATIONS §"Stub destination leak"](docs-verified/DEVIATIONS.md#2026-05-08--stub-destination-leak-in-sendonlyplan-discovered--fixed-during-phase-7a-docs-prep) for the full forensic.
 
-| actionId | amount (USDC) | tx hash |
-|---|---|---|
-| `4d2feea5-62d3-415a-8ffd-edd69b3dcb66` | 0.683015 | [`0x8540cf09250f56626e4ac95a49d6a04a0eac3f2f135ce70cffdd7dd0bc34517a`](https://basescan.org/tx/0x8540cf09250f56626e4ac95a49d6a04a0eac3f2f135ce70cffdd7dd0bc34517a) |
-| `8c8185dc-c13f-4630-96cb-2de46a2372bd` | 0.438111 | [`0x48ad6690a63b0a9275442b975a499b6b8f73c1a7e8f3f7f3acedef17d8a5bfe0`](https://basescan.org/tx/0x48ad6690a63b0a9275442b975a499b6b8f73c1a7e8f3f7f3acedef17d8a5bfe0) |
+| actionId | amount (USDC) | tx hash | destination |
+|---|---|---|---|
+| `4d2feea5-62d3-415a-8ffd-edd69b3dcb66` | 0.683015 | [`0x8540cf09250f56626e4ac95a49d6a04a0eac3f2f135ce70cffdd7dd0bc34517a`](https://basescan.org/tx/0x8540cf09250f56626e4ac95a49d6a04a0eac3f2f135ce70cffdd7dd0bc34517a) | `0xcccc…cccc` (sink) |
+| `8c8185dc-c13f-4630-96cb-2de46a2372bd` | 0.438111 | [`0x48ad6690a63b0a9275442b975a499b6b8f73c1a7e8f3f7f3acedef17d8a5bfe0`](https://basescan.org/tx/0x48ad6690a63b0a9275442b975a499b6b8f73c1a7e8f3f7f3acedef17d8a5bfe0) | `0xcccc…cccc` (sink) |
+| `46476a7d-96e5-4ee6-9c0b-4c7957304383` | 0.266678 | [`0x81e750db1e60ca66e49b94cb86d6ea1301748c51fa77cdacad285cad48cbb70e`](https://basescan.org/tx/0x81e750db1e60ca66e49b94cb86d6ea1301748c51fa77cdacad285cad48cbb70e) | `0xcccc…cccc` (sink) |
 
-Each followed the full PRD §6.2 lifecycle: `topup_planned` → `topup_send_pending` → `topup_send_confirmed` → `topup_confirmed`.
+Each followed the full PRD §6.2 lifecycle: `topup_planned` → `topup_send_pending` → `topup_send_confirmed` → `topup_confirmed`. The lifecycle and policy logic are valid; only the send destination was wrong.
 
-### Subordinate burn loops (`qm test spike`)
+#### Subordinate burn loops (`qm test spike`)
 
 Real ERC-20 transfers from each subordinate to the burn address `0x000000000000000000000000000000000000dEaD`, driving the watcher's EWMA so the policies have real signal:
 
-#### alpha-1 spike (rate=5/h, 5 sends + 1 manual probe)
+##### alpha-1 spike (rate=5/h, 5 sends + 1 manual probe)
 
 | # | tx |
 |---|---|
@@ -137,7 +161,7 @@ Real ERC-20 transfers from each subordinate to the burn address `0x0000000000000
 | 5 | [`0x0c4e1c704f4557eb06f7c9ef43cb094771f827bbee5687cabb271ffdf1bab689`](https://basescan.org/tx/0x0c4e1c704f4557eb06f7c9ef43cb094771f827bbee5687cabb271ffdf1bab689) |
 | 6 (probe) | [`0x3472b6c012cfd21881e51244a1e381f3b48bf4abb4c8e1a1e1b5c1ea96e5651a`](https://basescan.org/tx/0x3472b6c012cfd21881e51244a1e381f3b48bf4abb4c8e1a1e1b5c1ea96e5651a) |
 
-#### alpha-2 spike (rate=10/h, 6 sends — drove the J1 + happy-path narrative above)
+##### alpha-2 spike (rate=10/h, 6 sends — drove the J1 + happy-path narrative above)
 
 | # | tx |
 |---|---|
@@ -148,7 +172,7 @@ Real ERC-20 transfers from each subordinate to the burn address `0x0000000000000
 | 5 | [`0x296b211af425d12d31d3d556f810b294b4c68b203af7ba3e09d7d98b55773b27`](https://basescan.org/tx/0x296b211af425d12d31d3d556f810b294b4c68b203af7ba3e09d7d98b55773b27) |
 | 6 | [`0x13386428a9af764e0921132d2e0657f4e166e918e771e31b89fbe667762dc3ad`](https://basescan.org/tx/0x13386428a9af764e0921132d2e0657f4e166e918e771e31b89fbe667762dc3ad) |
 
-### Setup transactions
+#### Setup transactions
 
 Subordinate seed funding (`zerion send` from principal):
 
@@ -166,7 +190,7 @@ ETH gas seeding (viem direct — sign-time `deny-transfers` policy correctly blo
 | alpha-2 | [`0xa45ff870d86de8816d5704852cc2ffe1103944e5c3c86ba2694cb294b895e8fe`](https://basescan.org/tx/0xa45ff870d86de8816d5704852cc2ffe1103944e5c3c86ba2694cb294b895e8fe) |
 | alpha-3 | [`0x58e4ff7a014ef558e8274f9b250dd5d6a4f1d8a168dab246970438497202beb2`](https://basescan.org/tx/0x58e4ff7a014ef558e8274f9b250dd5d6a4f1d8a168dab246970438497202beb2) |
 
-### Reconcile demo (PRD §6.4)
+#### Reconcile demo (PRD §6.4)
 
 A bug in the executor's `pickTxHash` (now fixed) produced three orphan top-up plans on a previous run. On the next daemon restart, `findOrphans()` returned 3 incomplete actions and the daemon **refused to tick** until the operator ran `zerion qm reconcile <id> --mark-failed` for each. After resolution, daemon resumed cleanly. After the successful happy-path top-ups, a kill+restart found zero orphans.
 

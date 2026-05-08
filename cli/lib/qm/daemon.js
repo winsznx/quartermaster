@@ -22,7 +22,7 @@ import {
   writeFileSync,
 } from "node:fs";
 
-import { listWallets } from "../fleet/registry.js";
+import { getWallet, listWallets } from "../fleet/registry.js";
 import { listSources } from "../treasury/sources.js";
 import { applyApyToSources } from "./apy.js";
 import { decide } from "./decider.js";
@@ -340,8 +340,23 @@ function deriveTransientId() {
 }
 
 function sendOnlyPlan(action) {
+  const target = getWallet(action.targetWalletId);
+  if (!target) {
+    const err = new Error(
+      `sendOnlyPlan: target wallet "${action.targetWalletId}" not in fleet — refusing to execute top-up`,
+    );
+    err.code = "target_wallet_not_in_fleet";
+    throw err;
+  }
+  if (typeof target.address !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(target.address)) {
+    const err = new Error(
+      `sendOnlyPlan: target wallet "${action.targetWalletId}" has invalid address "${target.address}" — refusing to execute top-up`,
+    );
+    err.code = "target_wallet_invalid_address";
+    throw err;
+  }
   return {
-    sendTo: "0x" + "c".repeat(40),
+    sendTo: target.address,
     sendToken: "USDC",
     sendAmount: action.topUpAmountUsdc,
     expectedFinalBalance: action.topUpAmountUsdc,

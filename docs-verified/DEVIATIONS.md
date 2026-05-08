@@ -23,6 +23,48 @@ Format per entry:
 
 ## Architectural Pivots
 
+### 2026-05-08 — Stub destination leak in `sendOnlyPlan` (discovered + fixed during Phase 7a docs prep)
+
+**Pivot in one line:** the daemon's send-leg planner had a hardcoded sink address (`"0x" + "c".repeat(40)`) that was never replaced by the real subordinate address; three Phase 4.6 top-ups drained principal into `0xc...c` instead of reaching alpha-2. Found by on-chain audit, fixed before Phase 7a, regression-guarded.
+
+**What deviated:** `cli/lib/qm/daemon.js:342` `sendOnlyPlan(action)` returned `{ sendTo: "0x" + "c".repeat(40), … }`. The executor faithfully passed that to `zerion send … --to 0xcccc…cccc`, the upstream send command faithfully signed and broadcast the transfer, the chain faithfully included it, and the ledger faithfully wrote `topup_send_confirmed` with a real, valid tx hash. Every layer behaved correctly relative to the data it received — but the data itself was placeholder shaped like the real thing.
+
+**How it was found:** while preparing the Phase 7a x402-runtime doc, I cross-checked the §26.4 hash table against the on-chain history. `eth_getLogs` for USDC Transfer events from `0x50b1…` (principal) showed the three "alpha-2 top-up" hashes (`0x8540cf09…`, `0x48ad6690…`, `0x81e750db…`) had `to = 0xcccccccccccccccccccccccccccccccccccccccc`. Matching `eth_getLogs` to alpha-2's address showed zero IN transfers in the same window. The "successful top-ups" had drained $1.388 USDC of principal's budget into a dead address.
+
+**Why the bug existed:** `sendOnlyPlan` shipped as a Phase 4 scaffold meant to be replaced once the executor wired into a real `executionPlan` selector — the Phase 4.5 plan doc has `executionPlan` as a TODO line item that was rolled into Phase 5. The daemon code path that called `sendOnlyPlan` survived as a fallback (`options.executionPlan ?? sendOnlyPlan(action)`), the integration test injected its own executionPlan and passed, and no test exercised the default fallback against a real fleet entry. The placeholder shipped.
+
+**Why it survived four phases of testing:**
+- Unit tests for sendOnlyPlan: none — it was internal scaffolding.
+- Integration test (`qm-integration.test.mjs`): injects `runner` (mocked subprocess) but uses the default `sendOnlyPlan`, then asserts `txHashes.send` matches the runner's hardcoded `VALID_TX`. The send args were never inspected for `--to` correctness. Test passed because it was checking the wrong axis.
+- Phase 4.6 manual verification: stopped at "ledger says `topup_send_confirmed`" instead of "alpha-2 USDC balance increased on-chain." Ledger told the truth about the tx hash but the tx delivered to the wrong wallet.
+
+**Fix:** `sendOnlyPlan` now resolves the target's address via `getWallet(action.targetWalletId).address`, throwing `target_wallet_not_in_fleet` or `target_wallet_invalid_address` rather than silently defaulting. The fix is one function and lives at `cli/lib/qm/daemon.js:342-364`.
+
+**Regression guard:** new `cli/tests/qm-no-stubs.test.mjs` greps `cli/lib/qm`, `cli/commands/qm`, `cli/policies`, `apps/dashboard`, `apps/landing` for sink-shape addresses (`0xCCCC…`, `0xdEaD…`), the `"0x" + "c".repeat(40)` construction family, ellipsis-style fixture addresses (`0x1234…abcd`), and TODO/FIXME/XXX/HACK markers in non-comment lines. Runs as part of `node --test tests/*.test.mjs`. New legitimate addresses (e.g. public protocol contracts) must be added to a whitelist in the test with a justifying comment.
+
+**Other findings from the audit (all clean or removed):**
+- `cli/commands/qm/test-x402-burn.js:41` `DEFAULT_TARGET = "0xd8dA…6045"` — vitalik.eth, public benign default for `analyze --x402`. **Legitimate**, whitelisted in regression guard.
+- `apps/dashboard/lib/fixtures/state.json` — orphan fixture file from the original frontend scaffold containing fake addresses, fake KPIs, fake actions. No source file imported it (`grep -r "fixtures/state"` came back empty in apps/dashboard sources). **Removed.** Regression guard now forbids any new file under `apps/*/lib/fixtures/`.
+- USDC contract address `0x833589fcd…` and x402 facilitator `0xd07c06a650a8…` appear in dashboard treasury display + tests — public protocol addresses, **legitimate**, whitelisted.
+- `Math.random()` in `deriveTransientId` — generates UUIDv7-shape sentinel for system events the dashboard filters out. Documented at the call site. **Legitimate**.
+- All `?? defaultValue` patterns in qm-lib resolve to real production implementations as the default and test-injectable values as overrides. **Legitimate.**
+
+**On-chain footprint of the bug:** $1.388 USDC drained to `0xcccccccccccccccccccccccccccccccccccccccc` across three transactions:
+- `0x8540cf09250f56626e4ac95a49d6a04a0eac3f2f135ce70cffdd7dd0bc34517a` ($0.683015)
+- `0x48ad6690a63b0a9275442b975a499b6b8f73c1a7e8f3f7f3acedef17d8a5bfe0` ($0.438111)
+- `0x81e750db1e60ca66e49b94cb86d6ea1301748c51fa77cdacad285cad48cbb70e` ($0.266678)
+
+These hashes remain in README §26.4 for transparency, annotated as "drained to stub destination — fix in this entry." The burn-rate-oracle blocks (recorded in the same Phase 4.6 ledger) used real ledger samples and remain valid evidence of policy logic.
+
+**What this means for hackathon claims:**
+- "Daemon decides + executes top-ups" — true; the planning, policy stack, decider, executor pipeline, and on-chain broadcast all work and are evidenced by real basescan hashes. The bug was in *one line of one function* downstream of the decision.
+- "Layer-1 policies catch burn-rate anomalies" — true; the four BURN_RATE_ANOMALY_DETECTED blocks in the Phase 4.6 ledger used real on-chain data and are unaffected.
+- "Real top-ups landed in subordinate wallets" — **false for Phase 4.6**. The top-ups landed in `0xc…c`. Will be re-demonstrated truthfully in Phase 7a once the operator drives the e2e with `QM_KEYSTORE_PASSPHRASE` set.
+
+**Disclosure principle:** the original §26.4 hashes are kept (not retracted) and annotated. Judges who audit on-chain see methodical recovery rather than airbrushing.
+
+---
+
 ### 2026-05-07 — Phase 4.6 e2e executed on Base mainnet, not Sepolia
 
 **Pivot in one line:** demo executed e2e on Base mainnet rather than Sepolia — chain-registry constraints + cleaner upstream support; demo evidence stronger as a result.

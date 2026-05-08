@@ -212,6 +212,53 @@ The agent will then:
 
 ---
 
+## Phase 7a re-run — operator-driven
+
+The Phase 7a hash table in README §26.4 has 8 confirmed x402 settlements (alpha-1 → facilitator). The full e2e (subordinate burn → daemon detects → top-up succeeds, then spike burn → policy blocks) needs the operator to drive it once because `qm test x402-burn` exports the subordinate's mnemonic from the keystore, which requires the keystore passphrase.
+
+**Why operator-driven:** `cli/commands/qm/test-x402-burn.js` calls `exportWallet(walletId, QM_KEYSTORE_PASSPHRASE)` to derive the subordinate's EVM key. The passphrase is never written to disk or env. It must come from the operator at command time.
+
+**Prerequisites:** keystore + agent tokens + fleet already set up (steps 1–6 above). Daemon stopped. `principal` has ≥ $1 USDC + ~$0.10 of native ETH for gas. Each subordinate has whatever USDC budget the e2e needs (alpha-1 needs ≥ $0.10 for the modest burn; alpha-2 needs ≥ $0.20 for the spike).
+
+**Command sequence (run from repo root):**
+
+```bash
+# 1. Source the api key (.env.local) — the daemon's subprocess spawn picks it up too.
+set -a; . .env.local; set +a
+
+# 2. Set the keystore passphrase ONLY for this shell (no rc files, no .env files).
+read -s QM_KEYSTORE_PASSPHRASE && export QM_KEYSTORE_PASSPHRASE
+# (paste the passphrase you used during step 2 of bootstrap, hit enter)
+
+# 3. Start the daemon in the background. It reads the same passphrase via env.
+node cli/cli/zerion.js qm run > /tmp/qm-daemon.log 2>&1 &
+echo "daemon pid: $!"
+
+# 4. Drive alpha-1 through a normal burn (rate=2 calls/min, duration=180s → 6 calls × $0.01 = $0.06).
+node cli/cli/zerion.js qm test x402-burn --wallet=alpha-1 --rate=2 --duration=180
+
+# 5. Wait ~2 ticks for the daemon to detect alpha-1's runway crossing the threshold,
+#    plan a top-up, run the policy stack, and execute. Watch the daemon log:
+tail -f /tmp/qm-daemon.log
+# (Ctrl-C the tail once you see topup_send_confirmed; that hash is the new Phase 7a top-up.)
+
+# 6. Drive alpha-2 through a spike (rate=30 calls/min, duration=60s → up to 30 calls × $0.01 = $0.30).
+node cli/cli/zerion.js qm test x402-burn --wallet=alpha-2 --rate=30 --duration=60
+
+# 7. Wait ~1 tick for the daemon to plan the alpha-2 top-up. burn-rate-oracle should
+#    block with BURN_RATE_ANOMALY_DETECTED. Capture that block from the ledger:
+grep -E "BURN_RATE_ANOMALY|topup_send_confirmed" ~/.zerion/quartermaster/ledger.jsonl | tail -20
+
+# 8. Stop the daemon cleanly.
+kill %1
+```
+
+**What to capture for README §26.4:** the new `topup_send_confirmed` tx hash (alpha-1's real top-up, post-fix), the new `BURN_RATE_ANOMALY_DETECTED` actionId + reasonText (alpha-2 block), and the x402 settlement hashes already on-chain from steps 4 + 6 (read via `eth_getLogs` on USDC contract from each wallet's address).
+
+**Safety:** unset the passphrase before closing the shell so it doesn't leak into shell history saves: `unset QM_KEYSTORE_PASSPHRASE`.
+
+---
+
 ## Troubleshooting
 
 **`missing_api_key` from any subcommand** — you didn't `source .env.local`. Re-run step 1.

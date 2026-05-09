@@ -1,14 +1,15 @@
 /**
- * Daemon HTTP API — PRD §22.3.
+ * Daemon HTTP API — PRD §22.3 + Phase 8 public-deploy binding.
  *
  * Hono app, response shapes parsed against `@quartermaster/shared-schemas`
  * before send. Exported as a factory so tests can supply a `state` object
  * (the daemon's in-memory snapshot) and use `app.fetch(Request)` directly
  * without binding a port.
  *
- * Bind to 127.0.0.1 ONLY (PRD §10.1). CORS is wide-open for the local
- * dashboard at :3001. Phase 6 will widen to the Vercel origin once
- * NEXT_PUBLIC_DAEMON_URL points at Railway.
+ * Default: bind 127.0.0.1 (loopback). Under QM_PUBLIC=1: bind 0.0.0.0 so
+ * Railway's edge proxy can reach the container, and widen CORS to the
+ * configured Vercel origins. Routes stay GET-only — judges can browse,
+ * no mutations exposed via HTTP.
  */
 
 import { Hono } from "hono";
@@ -27,6 +28,42 @@ import {
   StateResponse,
   TreasuryResponse,
 } from "@quartermaster/shared-schemas";
+
+import { appendEvent } from "./ledger.js";
+
+/**
+ * Parse `QM_CORS_ORIGINS` (comma-separated list) into an allowlist array.
+ * Always includes the local-dev origins so self-host workflows keep working.
+ */
+export function parseCorsOrigins(envVal) {
+  const local = ["http://127.0.0.1:3001", "http://localhost:3001"];
+  if (!envVal || typeof envVal !== "string") return local;
+  const extras = envVal
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  // Dedupe while preserving order; locals first.
+  const seen = new Set();
+  const out = [];
+  for (const o of [...local, ...extras]) {
+    if (seen.has(o)) continue;
+    seen.add(o);
+    out.push(o);
+  }
+  return out;
+}
+
+/**
+ * Resolve the bind hostname + public-mode flag from env. QM_PUBLIC=1 binds
+ * to all interfaces so Railway's proxy can reach the container.
+ */
+export function resolveBindConfig(env = process.env) {
+  const publicMode = env.QM_PUBLIC === "1";
+  const hostname = publicMode ? "0.0.0.0" : "127.0.0.1";
+  const port = Number(env.PORT ?? env.QM_PORT ?? 7402);
+  const corsOrigins = parseCorsOrigins(env.QM_CORS_ORIGINS);
+  return { publicMode, hostname, port, corsOrigins };
+}
 
 /**
  * Build a Hono app bound to a daemon `state` object. The state object is
@@ -54,11 +91,49 @@ export function buildApp(state, options = {}) {
     "http://127.0.0.1:3001",
     "http://localhost:3001",
   ];
+  // Optional: skipAccessLog (used by tests so the regression suite isn't
+  // chatty against the ledger).
+  const accessLog = options.accessLog ?? !options.skipAccessLog;
 
   app.use("*", cors({ origin: allowedOrigins }));
 
+  if (accessLog) {
+    app.use("*", async (c, next) => {
+      const t0 = Date.now();
+      await next();
+      try {
+        appendEvent({
+          type: "http_request",
+          ts: new Date().toISOString(),
+          method: c.req.method,
+          path: c.req.path,
+          status: c.res.status,
+          durationMs: Date.now() - t0,
+          origin: c.req.header("origin") ?? null,
+        });
+      } catch {
+        // Ledger write failure should never break a response. Drop the log
+        // line silently — the daemon keeps serving. Phase-7a precedent:
+        // tx hashes are the source of truth, ledger is the log.
+      }
+    });
+  }
+
   app.get("/api/health", (c) => {
-    return c.json(HealthInfo.parse(state.health));
+    const now = Date.now();
+    const startedAtMs = state.health?.startedAt ? new Date(state.health.startedAt).getTime() : now;
+    const lastTickAt = state.lastTickAt ?? null;
+    const fleetSize = Array.isArray(state.fleet) ? state.fleet.length : 0;
+    const liveOrchestrator = state.liveOrchestrator ?? undefined;
+    const payload = {
+      ...state.health,
+      uptimeSec: Math.max(0, Math.floor((now - startedAtMs) / 1000)),
+      fleetSize,
+      lastTickAt,
+      publicMode: state.publicMode ?? false,
+      ...(liveOrchestrator ? { liveOrchestrator } : {}),
+    };
+    return c.json(HealthInfo.parse(payload));
   });
 
   app.get("/api/state", (c) => {
@@ -190,7 +265,7 @@ export async function broadcastState(state) {
  * Build a fresh, empty daemon state object. The daemon hydrates it at
  * startup from `~/.zerion/quartermaster/`.
  */
-export function emptyState({ daemonPid, startedAt, version, settings, policies }) {
+export function emptyState({ daemonPid, startedAt, version, settings, policies, publicMode = false, liveOrchestrator = null }) {
   return {
     health: { status: "ok", daemonPid, startedAt, version },
     fleet: [],
@@ -204,5 +279,9 @@ export function emptyState({ daemonPid, startedAt, version, settings, policies }
     policyConfig: {},
     settings,
     subscribers: new Set(),
+    // Phase 8 additions for /api/health expansion + live orchestrator status.
+    publicMode,
+    lastTickAt: null,
+    liveOrchestrator,
   };
 }

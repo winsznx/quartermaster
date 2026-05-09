@@ -265,5 +265,45 @@ export const LedgerEvent = z.discriminatedUnion("type", [
       resolution: z.string().min(1),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal("http_request"),
+      ts: IsoTimestamp,
+      method: z.string().min(1),
+      path: z.string().min(1),
+      status: z.number().int().nonnegative(),
+      durationMs: z.number().nonnegative(),
+      origin: z.string().nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("live_orchestrator_tick"),
+      ts: IsoTimestamp,
+      decision: z.enum([
+        "skipped_no_burn_window",
+        "skipped_low_subordinate_balance",
+        "skipped_budget_exhausted",
+        "skipped_passphrase_missing",
+        "triggered_burn",
+      ]),
+      reason: z.string(),
+      monthlyBudgetUsdc: z.number().nonnegative().optional(),
+      monthlySpentUsdc: z.number().nonnegative().optional(),
+      walletId: WalletId.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("daemon_started"),
+      ts: IsoTimestamp,
+      pid: z.number().int().positive(),
+      port: z.number().int().positive(),
+      hostname: z.string().min(1),
+      qmHome: z.string().min(1),
+      publicMode: z.boolean(),
+      corsOrigins: z.array(z.string()),
+    })
+    .strict(),
 ]);
 export type LedgerEvent = z.infer<typeof LedgerEvent>;

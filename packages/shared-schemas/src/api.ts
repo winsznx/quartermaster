@@ -19,6 +19,27 @@ export const HealthInfo = z
     daemonPid: z.number().int().positive(),
     startedAt: IsoTimestamp,
     version: z.string().min(1),
+    // Phase 8 additions for Railway public deployment + health probes.
+    // Optional so existing callers / fixtures keep parsing.
+    uptimeSec: z.number().nonnegative().optional(),
+    fleetSize: z.number().int().nonnegative().optional(),
+    lastTickAt: IsoTimestamp.nullable().optional(),
+    publicMode: z.boolean().optional(),
+    liveOrchestrator: z
+      .object({
+        enabled: z.boolean(),
+        monthlyBudgetUsdc: z.number().nonnegative(),
+        monthlySpentUsdc: z.number().nonnegative(),
+        budgetExhausted: z.boolean(),
+        lastDecision: z
+          .object({
+            decision: z.string(),
+            reason: z.string(),
+            ts: IsoTimestamp,
+          })
+          .nullable(),
+      })
+      .optional(),
   })
   .strict();
 export type HealthInfo = z.infer<typeof HealthInfo>;

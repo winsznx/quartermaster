@@ -75,11 +75,14 @@ export default function LandingPage() {
             </p>
 
             <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mt-8 w-full">
-              <a href="https://github.com/winsznx/quartermaster" className="w-fit bg-accent text-text-inverse px-8 py-3 rounded-[6px] font-medium hover:bg-accent-hover transition-colors duration-150 inline-block text-center">
+              <a href="https://quartermaster-dashboard.vercel.app" className="w-fit bg-accent text-text-inverse px-8 py-3 rounded-[6px] font-medium hover:bg-accent-hover transition-colors duration-150 inline-block text-center">
+                View the live dashboard
+              </a>
+              <a href="https://github.com/winsznx/quartermaster" className="w-fit border border-accent text-accent px-8 py-3 rounded-[6px] font-medium hover:bg-surface-2 transition-colors duration-150 inline-block text-center">
                 View on GitHub
               </a>
-              <a href="https://github.com/winsznx/quartermaster#264-live-demo--base-mainnet-transactions" className="w-fit border border-accent text-accent px-8 py-3 rounded-[6px] font-medium hover:bg-surface-2 transition-colors duration-150 inline-block text-center">
-                See on-chain hashes
+              <a href="https://github.com/winsznx/quartermaster#264-live-demo--base-mainnet-transactions" className="w-fit text-text-secondary hover:text-text-primary px-2 py-3 transition-colors duration-150 inline-block text-center text-sm">
+                On-chain hashes →
               </a>
             </div>
           </div>

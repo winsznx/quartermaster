@@ -115,7 +115,21 @@ Layer 1 prevents bad plans from being constructed. Layer 2 prevents a malicious 
 
 A daemon that watches balances and tops them up is a weekend project. The defensible thing is the policy framework: locked reason codes, a two-layer model, an evaluator contract that's pure-functional and async, and a registration step that's one line. Five policies ship in v1 because that's what the canonical demo needs. The next ten — domain-specific things like *time-of-day caps*, *per-counterparty drift detectors*, *stablecoin-only sources* — are small. The framework is the contribution; the policies in v1 are the existence proof.
 
-## Quick start (run your own)
+## Quick start
+
+### 1. Browse the live deployment (no clone needed)
+
+| Surface | URL |
+|---|---|
+| Landing | [quartermaster-landing.vercel.app](https://quartermaster-landing.vercel.app) |
+| Dashboard | [quartermaster-dashboard.vercel.app](https://quartermaster-dashboard.vercel.app) — polls a public Railway daemon |
+| Daemon API (raw) | `<railway-domain>/api/health` — see Railway env or run `curl <dashboard-url>/api/state-proxy` |
+
+The dashboard's status pill carries a **Deployed** badge when it's hitting the Railway daemon. The daemon runs the same code as a local install; all `/api/*` reads are public, all writes are gated to keys the operator holds. A small live-orchestrator subroutine fires a real x402 burn every ~15 minutes (hard-capped at $5 USDC/month) so the dashboard always has fresh activity. Service interruption (typically a Railway cold-start, ~15s) shows the matching offline copy variant.
+
+### 2. Run your own (self-host)
+
+For production use against your own wallets — full key custody on your machine, no third-party signing path:
 
 **Prerequisites:**
 - Node ≥ 22 (LTS recommended)
@@ -152,9 +166,13 @@ pnpm dev:dashboard
 # → http://localhost:3001 (polls 127.0.0.1:7402 by default)
 ```
 
-Self-hosters never set `NEXT_PUBLIC_DAEMON_URL` — the default points at localhost.
+Self-hosters never set `NEXT_PUBLIC_DAEMON_URL` — the default points at localhost. The daemon stays bound to `127.0.0.1` (no network exposure) unless `QM_PUBLIC=1` is set.
 
 To reproduce the README §26.4 evidence end-to-end on your own funded wallets, see [`cli/BOOTSTRAP.md` § "Phase 7a re-run"](cli/BOOTSTRAP.md#phase-7a-re-run--one-shot-driver) — `QM_KEYSTORE_PASSPHRASE='...' node scripts/run-phase7a.mjs` runs the full canonical narrative in ~9 minutes.
+
+### 3. Deploy your own public instance
+
+To put your own daemon on Railway behind a public URL (so your dashboard can be browsed by anyone), see [`cli/RAILWAY_DEPLOY.md`](cli/RAILWAY_DEPLOY.md). End-to-end takes ~30 minutes if you've already completed the local bootstrap. Daemon's signing code is unchanged; the deploy just exposes the read-only HTTP surface to the network.
 
 ## Architecture decisions
 

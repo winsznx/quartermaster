@@ -19,7 +19,8 @@ import {
 import { mergeIntoProcessEnv } from "../../lib/qm/env.js";
 import { appendEvent } from "../../lib/qm/ledger.js";
 import { findOrphans } from "../../lib/qm/reconcile.js";
-import { buildApp } from "../../lib/qm/http-server.js";
+import { buildApp, resolveBindConfig } from "../../lib/qm/http-server.js";
+import { resolveQmHome } from "../../lib/qm/storage.js";
 
 export default async function qmRun(_args, flags) {
   // Load .env.local into process.env so this process (read paths, error
@@ -28,10 +29,16 @@ export default async function qmRun(_args, flags) {
   const { path, added } = mergeIntoProcessEnv();
   if (path) print({ envLoaded: { path, keys: added } });
 
+  // Phase 8: log volume choice at startup so operators can verify the
+  // daemon is reading from /data/quartermaster on Railway, ~/.zerion/...
+  // locally, or QM_HOME if explicitly set.
+  const { root: qmHome, source: qmHomeSource } = resolveQmHome();
+  print({ qmHome: { root: qmHome, source: qmHomeSource } });
+
   if (!acquireLock()) {
     printError(
       "lock_held",
-      "Another daemon is already running (lock file exists at ~/.zerion/quartermaster/.lock). " +
+      `Another daemon is already running (lock file exists at ${qmHome}/.lock). ` +
         "Stop it or remove the lock if stale.",
     );
     process.exit(1);
@@ -50,15 +57,36 @@ export default async function qmRun(_args, flags) {
     }
 
     const tickSeconds = Number(flags["tick-seconds"] ?? 60);
-    const port = Number(flags.port ?? 7402);
+    const bindConfig = resolveBindConfig();
+    const port = flags.port != null ? Number(flags.port) : bindConfig.port;
+    const hostname = flags.hostname ?? bindConfig.hostname;
 
-    const state = await hydrateState();
-    const app = buildApp(state);
+    const state = await hydrateState({ publicMode: bindConfig.publicMode });
+    const app = buildApp(state, { corsOrigins: bindConfig.corsOrigins });
 
-    // Bind HTTP server (loopback only).
+    // Bind HTTP server. 127.0.0.1 by default; 0.0.0.0 under QM_PUBLIC=1
+    // (Railway / public-deploy mode).
     const { serve } = await import("@hono/node-server");
-    const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
-    print({ daemonStarted: true, pid: process.pid, port, tickSeconds });
+    const server = serve({ fetch: app.fetch, port, hostname });
+    appendEvent({
+      type: "daemon_started",
+      ts: new Date().toISOString(),
+      pid: process.pid,
+      port,
+      hostname,
+      qmHome,
+      publicMode: bindConfig.publicMode,
+      corsOrigins: bindConfig.corsOrigins,
+    });
+    print({
+      daemonStarted: true,
+      pid: process.pid,
+      port,
+      hostname,
+      tickSeconds,
+      publicMode: bindConfig.publicMode,
+      corsOrigins: bindConfig.corsOrigins,
+    });
 
     let stopping = false;
     let consecutiveOverlaps = 0;

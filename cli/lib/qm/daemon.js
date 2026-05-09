@@ -14,6 +14,7 @@
  * uses the run-once path so it stays deterministic.
  */
 
+import { spawn } from "node:child_process";
 import {
   closeSync,
   existsSync,
@@ -21,11 +22,14 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { getWallet, listWallets } from "../fleet/registry.js";
 import { listSources } from "../treasury/sources.js";
 import { applyApyToSources } from "./apy.js";
 import { decide } from "./decider.js";
+import { buildSubprocessEnv } from "./env.js";
 import { executeAction } from "./executor.js";
 import { appendEvent, tail } from "./ledger.js";
 import { fetchPortfolio, fetchSourceBalance } from "./portfolio-fetcher.js";
@@ -36,6 +40,25 @@ import { observeFleet } from "./watcher.js";
 import { broadcastState, emptyState } from "./http-server.js";
 
 const DEFAULT_TICK_SECONDS = 60;
+
+// Phase 8: live orchestrator defaults. All overridable via env vars.
+export const LIVE_ORCHESTRATOR_DEFAULTS = {
+  // Skip orchestration if a subordinate burned within this many minutes.
+  burnIntervalMin: 15,
+  // Hard monthly USDC cap. Reset each calendar month (UTC).
+  budgetUsdc: 5,
+  // Subordinate balance floor — below this we let the daemon's normal
+  // top-up logic recover the wallet rather than burning more.
+  minSubordinateUsdc: 0.1,
+  // Approximate USDC cost per orchestrator-triggered burn. Used for the
+  // budget pre-check; actual on-chain cost may vary by a few cents.
+  perTriggerSpendUsdc: 0.02,
+};
+
+const ZERION_CLI_PATH = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../cli/zerion.js",
+);
 
 function lockPath() {
   return qmPath(".lock");
@@ -173,6 +196,16 @@ export async function hydrateState(options = {}) {
   const state = emptyState({
     daemonPid: process.pid,
     startedAt: now.toISOString(),
+    publicMode: options.publicMode ?? false,
+    liveOrchestrator: options.publicMode
+      ? {
+          enabled: true,
+          monthlyBudgetUsdc: options.liveOrchestratorConfig?.budgetUsdc ?? LIVE_ORCHESTRATOR_DEFAULTS.budgetUsdc,
+          monthlySpentUsdc: 0,
+          budgetExhausted: false,
+          lastDecision: null,
+        }
+      : null,
     version: options.version ?? "0.0.0-phase4",
     settings: options.settings ?? {
       daemon: {
@@ -314,6 +347,53 @@ export async function runOneTick(state, options = {}) {
     stats: state.policyStats[p.name] ?? { pass: 0, fail: 0 },
   }));
 
+  // Phase 8: live orchestrator. Opt-in via state.publicMode (set at daemon
+  // startup from QM_PUBLIC). Decision is logged regardless of outcome so
+  // /api/health can surface "why no burn this tick".
+  if (state.publicMode) {
+    const cfg = options.liveOrchestratorConfig ?? state.liveOrchestratorConfig ?? {};
+    const monthly = await liveOrchestratorMonthlySpend(options.now ?? new Date(), cfg.perTriggerSpendUsdc);
+    const orchDecision = evaluateLiveOrchestrator({
+      publicMode: true,
+      passphraseSet: Boolean(process.env.QM_KEYSTORE_PASSPHRASE),
+      fleet: state.fleet,
+      observations,
+      monthlySpentUsdc: monthly.spentUsdc,
+      config: cfg,
+      now: options.now ?? new Date(),
+    });
+    appendEvent({
+      type: "live_orchestrator_tick",
+      ts: orchDecision.ts,
+      decision: orchDecision.decision,
+      reason: orchDecision.reason,
+      monthlyBudgetUsdc: orchDecision.config.budgetUsdc,
+      monthlySpentUsdc: monthly.spentUsdc,
+      ...(orchDecision.walletId ? { walletId: orchDecision.walletId } : {}),
+    });
+    if (orchDecision.decision === "triggered_burn") {
+      const runner = options.liveOrchestratorRunner ?? defaultLiveOrchestratorRunner;
+      try {
+        runner({ walletId: orchDecision.walletId });
+      } catch {
+        // Subprocess spawn failure shouldn't crash the tick. The next tick
+        // will retry; meantime /api/health surfaces no recent triggered_burn.
+      }
+    }
+    state.liveOrchestrator = {
+      enabled: true,
+      monthlyBudgetUsdc: orchDecision.config.budgetUsdc,
+      monthlySpentUsdc:
+        orchDecision.decision === "triggered_burn"
+          ? monthly.spentUsdc + orchDecision.config.perTriggerSpendUsdc
+          : monthly.spentUsdc,
+      budgetExhausted: orchDecision.decision === "skipped_budget_exhausted",
+      lastDecision: { decision: orchDecision.decision, reason: orchDecision.reason, ts: orchDecision.ts },
+    };
+  }
+
+  state.lastTickAt = new Date().toISOString();
+
   if (typeof options.onBroadcast === "function") {
     await options.onBroadcast(state);
   } else {
@@ -328,6 +408,126 @@ export async function runOneTick(state, options = {}) {
   });
 
   return { tickId, decision, executed };
+}
+
+/**
+ * Compute month-to-date USDC spend by the live orchestrator. Walks the
+ * ledger and sums `live_orchestrator_tick` events whose `decision` is
+ * `triggered_burn` and whose `ts` is in the current calendar month (UTC).
+ *
+ * Phase 8 — used by the budget cap pre-check + surfaced via /api/health.
+ */
+export async function liveOrchestratorMonthlySpend(now = new Date(), perTriggerSpendUsdc = LIVE_ORCHESTRATOR_DEFAULTS.perTriggerSpendUsdc) {
+  const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  let triggers = 0;
+  for await (const ev of tail()) {
+    if (ev.type !== "live_orchestrator_tick") continue;
+    if (ev.decision !== "triggered_burn") continue;
+    if (Date.parse(ev.ts) < monthStart) continue;
+    triggers += 1;
+  }
+  return { triggers, spentUsdc: triggers * perTriggerSpendUsdc, monthStart };
+}
+
+/**
+ * Decide whether the live orchestrator should trigger a burn this tick.
+ * Pure function — caller spawns the subprocess if `decision === "triggered_burn"`.
+ *
+ * Skip conditions (in order, first match wins):
+ *   1. publicMode=false                       — opt-in only
+ *   2. QM_KEYSTORE_PASSPHRASE absent          — exportWallet would fail
+ *   3. recent on-chain burn observed          — no need to inject more
+ *   4. any subordinate balance below floor    — let top-up loop heal first
+ *   5. monthly budget exhausted               — hard cap
+ *
+ * Otherwise: trigger.
+ */
+export function evaluateLiveOrchestrator({
+  publicMode,
+  passphraseSet,
+  fleet,
+  observations,
+  monthlySpentUsdc,
+  config,
+  now,
+}) {
+  const ts = (now ?? new Date()).toISOString();
+  const cfg = { ...LIVE_ORCHESTRATOR_DEFAULTS, ...(config ?? {}) };
+
+  if (!publicMode) {
+    return { decision: "skipped_no_burn_window", reason: "publicMode disabled", ts, config: cfg };
+  }
+  if (!passphraseSet) {
+    return {
+      decision: "skipped_passphrase_missing",
+      reason: "QM_KEYSTORE_PASSPHRASE not set; live orchestrator cannot derive subordinate keys",
+      ts,
+      config: cfg,
+    };
+  }
+
+  const lowSubordinate = (fleet ?? []).find((w) => w.usdcBalance < cfg.minSubordinateUsdc);
+  if (lowSubordinate) {
+    return {
+      decision: "skipped_low_subordinate_balance",
+      reason: `subordinate "${lowSubordinate.id}" balance ${lowSubordinate.usdcBalance.toFixed(6)} < floor ${cfg.minSubordinateUsdc}; deferring to top-up logic`,
+      ts,
+      config: cfg,
+      walletId: lowSubordinate.id,
+    };
+  }
+
+  // Recent burn signal: any subordinate's ewmaHourlyBurn above a near-zero
+  // threshold (catches activity from the past ~2 half-lives).
+  const RECENT_BURN_EPSILON = 0.0001;
+  const recentBurner = (observations ?? []).find(
+    (o) => o.sample && o.sample.ewmaHourlyBurn > RECENT_BURN_EPSILON,
+  );
+  if (recentBurner) {
+    return {
+      decision: "skipped_no_burn_window",
+      reason: `recent burn detected — ${recentBurner.wallet.id} ewma=${recentBurner.sample.ewmaHourlyBurn.toFixed(6)} USDC/h above epsilon`,
+      ts,
+      config: cfg,
+      walletId: recentBurner.wallet.id,
+    };
+  }
+
+  if (monthlySpentUsdc + cfg.perTriggerSpendUsdc > cfg.budgetUsdc) {
+    return {
+      decision: "skipped_budget_exhausted",
+      reason: `monthly spend ${monthlySpentUsdc.toFixed(4)} + per-trigger ${cfg.perTriggerSpendUsdc} would exceed budget ${cfg.budgetUsdc}`,
+      ts,
+      config: cfg,
+    };
+  }
+
+  // Pick the highest-balance subordinate as the burner — preserves the
+  // others for the daemon's normal top-up demonstration.
+  const eligible = (fleet ?? []).filter((w) => w.usdcBalance >= cfg.minSubordinateUsdc);
+  eligible.sort((a, b) => b.usdcBalance - a.usdcBalance);
+  const target = eligible[0] ?? (fleet ?? [])[0];
+  return {
+    decision: "triggered_burn",
+    reason: `live orchestrator firing low-rate x402 burn on ${target?.id ?? "alpha-1"}`,
+    ts,
+    config: cfg,
+    walletId: target?.id ?? "alpha-1",
+  };
+}
+
+/**
+ * Default live-orchestrator burner: fire-and-forget subprocess spawn of
+ * `qm test x402-burn --wallet=<id> --rate=1 --duration=60`. Tests inject
+ * a stub via `options.liveOrchestratorRunner`.
+ */
+function defaultLiveOrchestratorRunner({ walletId }) {
+  const child = spawn(
+    "node",
+    [ZERION_CLI_PATH, "qm", "test", "x402-burn", `--wallet=${walletId}`, "--rate=1", "--duration=60"],
+    { stdio: ["ignore", "ignore", "ignore"], env: buildSubprocessEnv(), detached: true },
+  );
+  child.unref();
 }
 
 function deriveTransientId() {
@@ -363,4 +563,9 @@ function sendOnlyPlan(action) {
   };
 }
 
-export const __testing = { computeKpis, computePolicyStats, lastConfirmedByWallet };
+export const __testing = {
+  computeKpis,
+  computePolicyStats,
+  lastConfirmedByWallet,
+  defaultLiveOrchestratorRunner,
+};

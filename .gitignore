@@ -40,6 +40,9 @@ Thumbs.db
 # Vercel
 .vercel
 
+# Railway (CLI link state — created by `railway init` / `railway link`)
+.railway
+
 # Local runtime data (daemon writes here)
 ledger.jsonl
 *.jsonl

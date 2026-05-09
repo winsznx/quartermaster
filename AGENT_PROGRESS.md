@@ -961,3 +961,56 @@ All 356 cli tests still pass (342 / 0 fail / 14 skipped).
 - **License + acknowledgments moved to the end** (after §26.4 per the user's order j). The original placement had them above §26.4 which read awkwardly — license is conventionally the last thing.
 - **Asciinema CDN over npm install.** User constraint: "no React wrapper". Plus CDN means no bundle bloat for users who don't reach the cast (above-the-fold but lazy via `Script strategy="afterInteractive"`). Player + CSS each ~30 KB gzipped, fetched only when the cast is present.
 - **Static terminal block content refreshed with Phase 7a numbers** instead of leaving the Phase 4.6 hash. The fallback should advertise the real, post-fix demo (alpha-1 → `0x3f86…9422`, 22.13× ratio) since that's what the README and §26.4 now lead with.
+
+## 2026-05-09 — Claude Code (Opus 4.7) — Phase 8: Railway full-stack deployment
+
+**Phase:** 8 (public deployment + live orchestrator)
+**Started from:** da15acb
+**Ended at:** <commit SHA — appended after commit>
+
+### Done
+
+- **shared-schemas extended.** New `LedgerEvent` variants: `http_request` (PRD §15 access log), `live_orchestrator_tick` (decision + reason + monthly budget snapshot), `daemon_started` (boot record with hostname/qmHome/publicMode/corsOrigins). `HealthInfo` gained optional fields: `uptimeSec`, `fleetSize`, `lastTickAt`, `publicMode`, `liveOrchestrator { enabled, monthlyBudgetUsdc, monthlySpentUsdc, budgetExhausted, lastDecision }`. All additions are optional so existing clients don't break.
+- **`cli/lib/qm/storage.js` — Railway volume convention.** New `resolveQmHome(env)` resolves the state directory in priority order: `QM_HOME` (explicit override) → `/data/quartermaster` (when any `RAILWAY_*` env var present) → `~/.zerion/quartermaster` (local default). Public so daemon can log it at startup and tests can verify rules without monkey-patching. `isRailwayRuntime(env)` flags any `RAILWAY_*` prefix.
+- **`cli/lib/qm/http-server.js` — public binding + CORS + access log + expanded health.**
+  - `resolveBindConfig(env)` — `QM_PUBLIC=1` → `0.0.0.0` else `127.0.0.1`. Honors Railway's `PORT` over `QM_PORT` over default `7402`.
+  - `parseCorsOrigins(envVal)` — comma-split, trim, dedupe; locals (`127.0.0.1:3001`, `localhost:3001`) always present so self-host workflows keep working.
+  - `app.use("*")` middleware emits `http_request` ledger events per request when `accessLog` is enabled. Tests pass `skipAccessLog` to keep their ledgers clean. Ledger-write failures are swallowed — observability never breaks responses.
+  - `/api/health` payload expanded — surfaces `uptimeSec`, `fleetSize`, `lastTickAt`, `publicMode`, and the `liveOrchestrator` block when present. Schema-validated via the `HealthInfo` zod shape so the dashboard can render it directly.
+  - `emptyState` accepts `publicMode` + `liveOrchestrator` + tracks `lastTickAt`.
+- **`cli/lib/qm/daemon.js` — live orchestrator.**
+  - `evaluateLiveOrchestrator(input)` is a pure decision function returning one of `skipped_no_burn_window` / `skipped_passphrase_missing` / `skipped_low_subordinate_balance` / `skipped_budget_exhausted` / `triggered_burn`. Decision order codified: publicMode → passphrase → subordinate floor → recent burn (ewma > 0.0001 epsilon) → monthly budget cap → trigger.
+  - `liveOrchestratorMonthlySpend(now, perTriggerSpendUsdc)` walks the ledger, sums `live_orchestrator_tick` events with `decision: "triggered_burn"` from the current calendar month (UTC). Used by the budget pre-check + `/api/health` reporter.
+  - `defaultLiveOrchestratorRunner({ walletId })` fire-and-forget spawns `qm test x402-burn --wallet=<id> --rate=1 --duration=60` (1 x402 call per orchestrator burn; ~$0.02 USDC). Tests inject a stub via `options.liveOrchestratorRunner`.
+  - Wired into `runOneTick` after the main top-up logic. Decision is logged regardless of outcome so `/api/health` always reports a `lastDecision`. Targets the highest-balance subordinate (preserves the others for the daemon's normal top-up demonstration).
+  - Defaults: `burnIntervalMin=15`, `budgetUsdc=5`, `minSubordinateUsdc=0.10`, `perTriggerSpendUsdc=0.02`.
+- **`cli/commands/qm/run.js`** — reads bind config from env, logs the resolved `qmHome` at startup, emits `daemon_started` ledger event with the boot record (pid, port, hostname, qmHome, publicMode, corsOrigins). The `--port` and `--hostname` CLI flags still override env if set, for power users.
+- **`apps/dashboard/lib/daemon-url.ts`** — added `isDeployedDaemon()` helper (true iff `DAEMON_URL` is non-loopback).
+- **`apps/dashboard/components/daemon-status-pill.tsx`** — renders a `Deployed` accent badge when the dashboard targets a public daemon.
+- **`apps/dashboard/components/daemon-offline-panel.tsx`** — two copy variants. Deployed-target (Railway) sees "Service interruption — try again in a minute" with a CTA to the on-chain hashes meanwhile and a secondary BOOTSTRAP.md link for self-hosters. Local-target keeps the original "This dashboard requires a local Quartermaster daemon" + setup walkthrough.
+- **`cli/RAILWAY_DEPLOY.md`** — 9-step operator runbook: login + project init, service create + GitHub source, env-var matrix (PORT, QM_PUBLIC, QM_CORS_ORIGINS, QM_KEYSTORE_PASSPHRASE, ZERION_API_KEY, WALLET_PRIVATE_KEY, all three live-orchestrator knobs), volume mount at `/data`, tarball-and-push workflow for the local `~/.zerion/` keystore + state, deploy + healthcheck config, capture public URL, wire `NEXT_PUBLIC_DAEMON_URL` on Vercel. Plus 6-item troubleshooting section (CORS errors, volume not persisting, missing passphrase, orchestrator silent, budget exhausted, cold-start timeouts) and a cost-expectations footer.
+- **`README.md`** — Quick start restructured into 3 numbered subsections: (1) Browse the live deployment with the Vercel + Railway URLs and a note on the `Deployed` badge / live orchestrator; (2) Run your own (self-host) — the original setup walkthrough; (3) Deploy your own public instance — pointer to RAILWAY_DEPLOY.md.
+- **Landing hero CTA** — primary button now `View the live dashboard` → dashboard Vercel URL. `View on GitHub` is the secondary ghost button. `On-chain hashes →` demoted to tertiary inline text link.
+- **Phase 8 tests** — new `cli/tests/qm-phase8.test.mjs` with 26 tests across 7 suites: `resolveBindConfig` (5 cases — defaults, public, PORT priority, QM_PORT fallback, CORS), `parseCorsOrigins` (4 — locals-only, comma-trim, dedupe, locals-first), `resolveQmHome` (5 — env_qm_home, railway_volume, local_default, env wins over railway, isRailwayRuntime detection), `/api/health` expanded shape (2), `http_request` access log (2 — emits + skip), `evaluateLiveOrchestrator` (7 — every decision branch + ordering invariant), `liveOrchestratorMonthlySpend` (1 — month-boundary + decision-filter).
+- **All tests green.** cli: 384 / 370 pass / 14 skipped / 0 fail (was 358 / 344; +26 Phase 8 tests, +0 regressions). Typecheck clean across all 3 TS workspaces. Landing + dashboard production builds clean (Next 16.2.4 Turbopack).
+
+### Constraints respected
+
+- **No mocks.** `defaultLiveOrchestratorRunner` spawns the real `qm test x402-burn` subprocess. Tests inject stubs via the existing `options.runner` / `options.liveOrchestratorRunner` injection pattern (Phase 4 precedent).
+- **No secrets in tracked files.** `.env.example` documents shape only. `RAILWAY_DEPLOY.md` instructs operators to paste from `.env.local` + `/tmp/qm-passphrase.txt` directly into Railway's secret-fields UI. `QM_KEYSTORE_PASSPHRASE` and `WALLET_PRIVATE_KEY` are flagged as secret in the env-var matrix.
+- **Daemon signing code unchanged.** Phase 8 only touched the HTTP layer, the storage path resolver, the live orchestrator decision/spawn logic, and the boot-time bind config. The executor, decider, watcher, policies, and keystore unlock paths are byte-identical to Phase 7b.
+- **Monthly budget cap is hard.** `evaluateLiveOrchestrator` returns `skipped_budget_exhausted` and surfaces `liveOrchestrator.budgetExhausted: true` in `/api/health` once `monthlySpentUsdc + perTriggerSpendUsdc > budgetUsdc`. Cap resets on UTC month boundary (`Date.UTC(y, m, 1)`).
+
+### Phase 7c carry-over
+
+Both items remain open (not blockers; tracked):
+- Investigate the Phase 7a alpha-1 orphan plan (actionId `82161630-39d7-4915-93f0-c9b54513f134` passed all 5 policies but no terminal state recorded).
+- Add a `qm-integration.test.mjs` assertion that the runner was called with `--to <fleet-entry-address>` to close the gap that let the original `sendOnlyPlan` stub survive 4 phases of testing.
+
+### Decisions made (only the non-obvious ones)
+
+- **Live orchestrator targets the highest-balance subordinate, not always alpha-1.** Spec said "rate=1/min for 60s on alpha-1" as an example. In practice, picking the burner dynamically (a) preserves the others for the daemon's normal top-up demonstration when alpha-1 is the one being topped up, and (b) lets the orchestrator stay useful even if alpha-1 is mid-recovery. Falls back to alpha-1 if the eligible filter is empty.
+- **`http_request` events log to ledger, not stdout.** Stdout is the operator's view; ledger is the persistent surface the dashboard could show. Putting access logs in the ledger means they're queryable via the same tools that read top-up actions. Cost: ledger grows faster (every API hit = one line). Ledger compaction is a future phase concern.
+- **`skipAccessLog` rather than always-on.** Tests instantiate the app via `buildApp(state)` and assert ledger contents — making access log default-on would pollute every test's expected ledger sequence. Production daemons want it on; tests want it off. Explicit opt-out preserves the "don't surprise the existing tests" rule.
+- **Budget cap measured by trigger count × per-trigger spend, not actual on-chain settlement reads.** Reading the chain to verify each orchestrator burn's actual cost would couple the budget check to RPC availability. Counting triggers is approximate but bounded — a few cents of drift either way over a $5 monthly cap is acceptable.
+- **Live orchestrator decision is logged even on skip paths.** Means `/api/health` always shows `lastDecision` after the first tick in public mode, so judges can see "why no burn this minute" rather than just silence. Cost: more `live_orchestrator_tick` events in the ledger (~1 per minute of daemon uptime in public mode). Acceptable.

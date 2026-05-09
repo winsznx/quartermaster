@@ -14,3 +14,18 @@
  */
 export const DAEMON_URL: string =
   process.env.NEXT_PUBLIC_DAEMON_URL ?? "http://127.0.0.1:7402";
+
+/**
+ * True iff DAEMON_URL points at a non-loopback host — i.e., we're targeting
+ * the deployed Railway daemon rather than localhost. The status pill renders
+ * a "Deployed" subscript in this case so judges know they're hitting live
+ * infrastructure rather than a local dev process.
+ */
+export function isDeployedDaemon(url: string = DAEMON_URL): boolean {
+  try {
+    const u = new URL(url);
+    return u.hostname !== "127.0.0.1" && u.hostname !== "localhost";
+  } catch {
+    return false;
+  }
+}

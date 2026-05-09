@@ -1,12 +1,52 @@
 "use client";
 
+import { isDeployedDaemon } from "@/lib/daemon-url";
+
 /**
  * Shared offline-state panel rendered by every route when the daemon is
- * unreachable. Surfaces the start command + a link to the operator
- * bootstrap guide for visitors who land on the deployed dashboard without
- * a running local daemon.
+ * unreachable. Two copy variants — one for the public Vercel deploy where
+ * the dashboard targets a Railway daemon (visitor sees a transient outage,
+ * not a missing tool), and one for the local self-host case (visitor needs
+ * to bootstrap their own daemon).
  */
 export function DaemonOfflinePanel({ error }: { error?: string }) {
+  if (isDeployedDaemon()) {
+    return (
+      <div className="border border-border-subtle rounded-[6px] bg-surface-1 p-6">
+        <p className="font-medium text-text-primary">Service interruption — try again in a minute.</p>
+        <p className="text-sm text-text-secondary mt-2 mb-4">
+          The dashboard couldn&apos;t reach the public Quartermaster daemon. This is usually a Railway
+          cold-start (~15s) or a brief restart. The page will retry automatically.
+        </p>
+
+        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+          <a
+            href="https://github.com/winsznx/quartermaster#264-live-demo--base-mainnet-transactions"
+            className="bg-accent text-text-inverse px-5 py-2 rounded-[6px] font-medium hover:bg-accent-hover transition-colors duration-150 text-sm inline-block"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            See on-chain hashes meanwhile →
+          </a>
+          <span className="text-xs text-text-muted">
+            Want to self-host?{" "}
+            <a
+              href="https://github.com/winsznx/quartermaster/blob/main/cli/BOOTSTRAP.md"
+              className="text-accent hover:text-accent-hover underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              BOOTSTRAP.md
+            </a>
+            .
+          </span>
+        </div>
+
+        {error && <p className="text-[11px] text-text-muted mt-4 font-mono">{error}</p>}
+      </div>
+    );
+  }
+
   return (
     <div className="border border-border-subtle rounded-[6px] bg-surface-1 p-6">
       <p className="font-medium text-text-primary">This dashboard requires a local Quartermaster daemon.</p>

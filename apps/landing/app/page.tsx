@@ -332,7 +332,7 @@ export default function LandingPage() {
         <div className="flex justify-center gap-6 text-[13px] font-sans">
           <a href="https://github.com/winsznx/quartermaster" className="hover:text-text-primary transition-colors duration-150">GitHub</a>
           <a href="https://github.com/winsznx/quartermaster#264-live-demo--base-mainnet-transactions" className="hover:text-text-primary transition-colors duration-150">Live tx hashes</a>
-          <a href="mailto:xidoncapitals@gmail.com" className="hover:text-text-primary transition-colors duration-150">Contact</a>
+          <a href="mailto:timjosh507@gmail.com" className="hover:text-text-primary transition-colors duration-150">Contact</a>
         </div>
         <div className="mt-4 text-[12px] opacity-60">MIT License</div>
       </footer>

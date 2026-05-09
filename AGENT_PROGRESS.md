@@ -47,7 +47,7 @@ Keep entries terse. The diff is in git; this file captures *intent and state*, n
 **Ended at:** initial commit on `main`, pushed to `git@github.com:winsznx/quartermaster.git`
 
 ### Done
-- `git init -b main` with user `winsznx <xidoncapitals@gmail.com>`
+- `git init -b main` with user `winszn <timjosh507@gmail.com>`
 - `.gitignore` (covers node_modules, .next, .env, ledger.jsonl, .vercel)
 - pnpm workspace root: `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`
 - corepack-activated `pnpm@9.15.5` via `packageManager` field
